@@ -1,0 +1,724 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "NEXORA Platform APIs",
+    "description": "Enterprise-grade REST and WebSockets platform API spec supporting the NEXORA Predictive Crowd Intelligence platform.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Primary Backend Microserver"
+    },
+    {
+      "url": "http://localhost:8001",
+      "description": "Real-time Map Socket Server"
+    }
+  ],
+  "security": [
+    {
+      "OAuth2Bearer": []
+    }
+  ],
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "summary": "Register Operator Accounts",
+        "description": "Registers a new operator credentials details and roles clearance.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Operator Registered successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Registry profile overlap or criteria issue."
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Authenticate User Operator Session",
+        "description": "Validates username elements and passes security access and refresh keys.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "username_email",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "password_raw",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Login successful, tokens returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials."
+          }
+        }
+      }
+    },
+    "/auth/token/refresh": {
+      "post": {
+        "summary": "Refresh Auth Tokens",
+        "description": "Rotates session keys using refresh tokens.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRefreshRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tokens rotated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session has expired or lacks validity."
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "summary": "Sign Out Operator",
+        "description": "Blacklists access token headers and destroys session linkages.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRefreshRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successfully logged out.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cameras": {
+      "post": {
+        "summary": "Register New Camera",
+        "description": "Adds hardware tracking nodes to PostGIS indices config.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Camera registered successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List Array Cameras",
+        "description": "Returns array parameters register list.",
+        "responses": {
+          "200": {
+            "description": "Successful retrieval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CameraResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cameras/{camera_id}/status": {
+      "get": {
+        "summary": "Fetch Diagnostic Telemetry",
+        "description": "Retrieves real time frame values indicators.",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Uptime details returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cameras/{camera_id}/feed": {
+      "get": {
+        "summary": "Live Video Feed Stream",
+        "description": "Simulated live MJPEG camera feed parser stream.",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Multi-part boundary frames streaming.",
+            "content": {
+              "multipart/x-mixed-replace": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analytics/aggregate": {
+      "get": {
+        "summary": "Dashboard Aggregated Metrics",
+        "description": "Returns calculated metrics for all monitoring routes.",
+        "responses": {
+          "200": {
+            "description": "Network metrics returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardAnalyticsSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analytics/history/{camera_id}": {
+      "get": {
+        "summary": "Historical Analytics Logs",
+        "description": "Lookups timeseries logs database for spatial charting.",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "minutes_window",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 60
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Interval logs history returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnalyticsRecord"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/predict/risk": {
+      "post": {
+        "summary": "Classify Anomaly Risk Indicators",
+        "description": "Inputs crowd parameters to score safety risk categorizations.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Orange/Red severity mapping output.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionOutput"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xai/explain": {
+      "post": {
+        "summary": "SHAP Explainability Analytics",
+        "description": "Computes impact index factors contributing to risk assessments.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SHAP features and raw text reasons compiled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XAIExplanationOutput"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports/generate": {
+      "post": {
+        "summary": "Generate Telemetry Files",
+        "description": "Calculates statistical reports and stores PDF/CSV outputs.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": ["DAILY", "WEEKLY", "MONTHLY", "INCIDENT"]
+                  }
+                },
+                "required": ["scope"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Files generated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportGenerationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports/download/{filename}": {
+      "get": {
+        "summary": "Get Output File",
+        "description": "Serves compiled PDF summaries or Excel files from the reports disk.",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File bytes stream.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          }
+        }
+      }
+    },
+    "/alerts/active": {
+      "get": {
+        "summary": "List active alerts",
+        "description": "Fetches unacknowledged alarm triggers.",
+        "responses": {
+          "200": {
+            "description": "Alert logs array.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AlertRecord"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alerts/{alert_id}/acknowledge": {
+      "post": {
+        "summary": "Acknowledge incident",
+        "description": "Marks key alarm record as approved or actioned by operator.",
+        "parameters": [
+          {
+            "name": "alert_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "operator_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert acknowledged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertRecord"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/system": {
+      "get": {
+        "summary": "Get safety setups",
+        "description": "Reads platform limits indices.",
+        "responses": {
+          "200": {
+            "description": "Configurations settings load.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsModel"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Modify safety setups",
+        "description": "Updates global density alert limits.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsModel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "System limits settings adjusted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "updated_settings": {
+                      "$ref": "#/components/schemas/SettingsModel"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "OAuth2Bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "UserCreate": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string" },
+          "role": { "type": "string", "enum": ["ADMIN", "SECURITY_OFFICER", "EVENT_MANAGER"] }
+        },
+        "required": ["username", "email", "password", "role"]
+      },
+      "UserResponse": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "string", "format": "uuid" },
+          "username": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "role": { "type": "string" },
+          "is_active": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "TokenResponse": {
+        "type": "object",
+        "properties": {
+          "access_token": { "type": "string" },
+          "refresh_token": { "type": "string" },
+          "token_type": { "type": "string", "default": "bearer" },
+          "expires_in": { "type": "integer" }
+        }
+      },
+      "TokenRefreshRequest": {
+        "type": "object",
+        "properties": {
+          "refresh_token": { "type": "string" }
+        },
+        "required": ["refresh_token"]
+      },
+      "CameraCreate": {
+        "type": "object",
+        "properties": {
+          "camera_name": { "type": "string" },
+          "location_zone": { "type": "string" },
+          "rtsp_url": { "type": "string" },
+          "max_capacity": { "type": "integer" }
+        },
+        "required": ["camera_name", "location_zone", "rtsp_url", "max_capacity"]
+      },
+      "CameraResponse": {
+        "type": "object",
+        "properties": {
+          "camera_id": { "type": "string", "format": "uuid" },
+          "camera_name": { "type": "string" },
+          "location_zone": { "type": "string" },
+          "rtsp_url": { "type": "string" },
+          "max_capacity": { "type": "integer" },
+          "status": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CameraStatusResponse": {
+        "type": "object",
+        "properties": {
+          "camera_id": { "type": "string", "format": "uuid" },
+          "status": { "type": "string" },
+          "mjpeg_active": { "type": "boolean" },
+          "fps": { "type": "number" },
+          "network_latency_ms": { "type": "number" },
+          "uptime_pct": { "type": "number" }
+        }
+      },
+      "DashboardAnalyticsSummary": {
+        "type": "object",
+        "properties": {
+          "total_network_count": { "type": "integer" },
+          "average_occupancy_pct": { "type": "number" },
+          "active_queues": { "type": "integer" },
+          "total_entry_rate_per_min": { "type": "number" }
+        }
+      },
+      "AnalyticsRecord": {
+        "type": "object",
+        "properties": {
+          "log_id": { "type": "string", "format": "uuid" },
+          "camera_id": { "type": "string", "format": "uuid" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "current_count": { "type": "integer" },
+          "occupancy_pct": { "type": "number" },
+          "density_value": { "type": "number" },
+          "avg_speed": { "type": "number" },
+          "entry_rate": { "type": "number" },
+          "exit_rate": { "type": "number" },
+          "queue_length": { "type": "integer" },
+          "movement_direction": { "type": "string" }
+        }
+      },
+      "PredictionInput": {
+        "type": "object",
+        "properties": {
+          "total_headcount": { "type": "integer" },
+          "occupancy_pct": { "type": "number" },
+          "density_value": { "type": "number" },
+          "queue_length": { "type": "integer" },
+          "flow_rate_delta": { "type": "number" }
+        },
+        "required": ["total_headcount", "occupancy_pct", "density_value", "queue_length", "flow_rate_delta"]
+      },
+      "PredictionOutput": {
+        "type": "object",
+        "properties": {
+          "risk_level": { "type": "string" },
+          "risk_probability": { "type": "number" },
+          "predicted_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "XAIExplanationOutput": {
+        "type": "object",
+        "properties": {
+          "shap_base_value": { "type": "number" },
+          "prediction_probability": { "type": "number" },
+          "contributions": {
+            "type": "object",
+            "additionalProperties": { "type": "number" }
+          },
+          "explanation_text": { "type": "string" }
+        }
+      },
+      "ReportGenerationResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "scope": { "type": "string" },
+          "report_id": { "type": "string" },
+          "csv_path": { "type": "string" },
+          "html_path": { "type": "string" },
+          "generated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AlertRecord": {
+        "type": "object",
+        "properties": {
+          "alert_id": { "type": "string", "format": "uuid" },
+          "camera_id": { "type": "string", "format": "uuid" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "risk_level": { "type": "string" },
+          "confidence_pct": { "type": "number" },
+          "explanation": { "type": "string" },
+          "recommendations": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "is_acknowledged": { "type": "boolean" },
+          "acknowledged_at": { "type": "string", "format": "date-time", "nullable": true },
+          "operator_id": { "type": "string", "nullable": true }
+        }
+      },
+      "SettingsModel": {
+        "type": "object",
+        "properties": {
+          "warning_density_threshold": { "type": "number" },
+          "critical_density_threshold": { "type": "number" },
+          "queue_max_threshold": { "type": "integer" },
+          "siren_automation_enabled": { "type": "boolean" },
+          "alert_retry_interval_secs": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

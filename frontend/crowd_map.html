@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXORA Command Center - Interactive 2D Crowd Map</title>
+    <!-- SEO Meta Tags -->
+    <meta name="description"
+        content="NEXORA Predictive Crowd Intelligence interactive top-down 2D spatial map, tracking pedestrian density and routes.">
+    <meta name="robots" content="index, follow">
+    <!-- Typography Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+
+    <style>
+        /* =====================================================================
+           1. MODERN COMMAND CENTER VARIABLES (VANILLA CSS)
+           ===================================================================== */
+        :root {
+            --bg-primary: #060913;
+            --bg-secondary: #0c1122;
+            --bg-tertiary: #131b35;
+
+            --border-glow: #1e294b;
+            --accent-cyan: #00e5ff;
+            --accent-blue: #0066ff;
+
+            --status-green: #00e5a3;
+            --status-yellow: #ffb300;
+            --status-red: #ff2a54;
+
+            --text-primary: #e2e8f0;
+            --text-muted: #94a3b8;
+
+            --canvas-bg: #030509;
+            --neon-glow: 0 0 10px rgba(0, 229, 255, 0.25);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Sidebar console elements */
+        .sidebar {
+            width: 280px;
+            background-color: var(--bg-secondary);
+            border-right: 1px solid var(--border-glow);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            z-index: 100;
+        }
+
+        .header-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 30px;
+        }
+
+        .logo-box {
+            width: 24px;
+            height: 24px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            border-radius: 6px;
+            box-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
+        }
+
+        .logo-text {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 800;
+            font-size: 1.25rem;
+            letter-spacing: 1px;
+            background: linear-gradient(to right, #ffffff, var(--accent-cyan));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .section-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin: 20px 0 10px 0;
+            font-weight: 700;
+        }
+
+        /* Switchable Widget Buttons */
+        .control-row {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toggle-btn {
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-glow);
+            color: var(--text-muted);
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: left;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .toggle-btn:after {
+            content: 'OFF';
+            font-size: 0.7rem;
+            background-color: var(--bg-primary);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--text-muted);
+            border: 1px solid var(--border-glow);
+        }
+
+        .toggle-btn.enabled {
+            color: var(--text-primary);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 8px rgba(0, 229, 255, 0.15);
+        }
+
+        .toggle-btn.enabled:after {
+            content: 'ON';
+            color: var(--accent-cyan);
+            border-color: var(--accent-cyan);
+        }
+
+        .network-box {
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-glow);
+            border-radius: 8px;
+            padding: 14px;
+            font-size: 0.8rem;
+        }
+
+        .indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+            background-color: var(--status-red);
+        }
+
+        .indicator.online {
+            background-color: var(--status-green);
+            box-shadow: 0 0 6px var(--status-green);
+        }
+
+        /* Main Map Canvas Workspace */
+        .map-workspace {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .console-navbar {
+            height: 70px;
+            background-color: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-glow);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+        }
+
+        .console-title {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 0.5px;
+        }
+
+        .canvas-area-wrapper {
+            flex-grow: 1;
+            position: relative;
+            background-color: var(--canvas-bg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        #crowdMapCanvas {
+            background-color: #030509;
+            border: 1px solid var(--border-glow);
+            border-radius: 12px;
+            box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.8);
+            display: block;
+        }
+
+        /* Overlay camera feed preview component */
+        .live-status-panel {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(90px, 1fr));
+            gap: 10px;
+            width: min(520px, calc(100% - 48px));
+            z-index: 5;
+        }
+
+        .metric-pill {
+            background: rgba(12, 17, 34, 0.86);
+            border: 1px solid var(--border-glow);
+            border-radius: 10px;
+            padding: 10px 12px;
+            backdrop-filter: blur(8px);
+        }
+
+        .metric-pill .label {
+            display: block;
+            font-size: 0.63rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .metric-pill .value {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+        }
+
+        .metric-pill .value.warn {
+            color: var(--status-yellow);
+        }
+
+        .metric-pill .value.alert {
+            color: var(--status-red);
+        }
+
+        .camera-feed-modal {
+            position: absolute;
+            bottom: 24px;
+            right: 24px;
+            width: 280px;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--accent-cyan);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: var(--neon-glow);
+            display: none;
+            z-index: 10;
+        }
+
+        .feed-header {
+            background-color: var(--bg-tertiary);
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-glow);
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--accent-cyan);
+        }
+
+        .feed-placeholder {
+            height: 160px;
+            background-color: #04060c;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+        }
+
+        .feed-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--status-green);
+            animation: blink 1.2s infinite steps(2);
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 0.4;
+            }
+
+            50% {
+                opacity: 1.0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- SIDEBAR OPERATIONAL PANEL -->
+    <nav class="sidebar" aria-label="Console Sidebar Controls">
+        <div>
+            <div class="header-logo">
+                <div class="logo-box"></div>
+                <h1 class="logo-text">NEXORA MAP</h1>
+            </div>
+
+            <div class="section-label">Layer Controls</div>
+            <div class="control-row">
+                <button type="button" class="toggle-btn enabled" id="tgHeatmap">Density Heatmap</button>
+                <button type="button" class="toggle-btn enabled" id="tgArrows">Flow Vector Arrows</button>
+                <button type="button" class="toggle-btn" id="tgEvac">Emergency Egress Paths</button>
+            </div>
+
+            <div class="section-label">Interactive Elements</div>
+            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                Click on the blue camera nodes inside the top-down map view grid to intercept live video feeds and
+                parameters logs.
+            </p>
+        </div>
+
+        <div>
+            <div class="section-label">Socket Health</div>
+            <div class="network-box">
+                <span id="socketIndicator" class="indicator"></span>
+                <span id="socketStatusText">WS Engine: OFFLINE</span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- MAIN CONSOLE SCREEN -->
+    <main class="map-workspace">
+        <header class="console-navbar">
+            <div class="console-title">TUNNEL LEVEL 2 CROWD COORDINATES</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);" id="metricTicker">Active Tracking: 0 Persons</div>
+        </header>
+
+        <div class="canvas-area-wrapper">
+            <div class="live-status-panel">
+                <div class="metric-pill">
+                    <span class="label">Crowd</span>
+                    <div class="value" id="crowdCountValue">0</div>
+                </div>
+                <div class="metric-pill">
+                    <span class="label">Risk</span>
+                    <div class="value" id="riskValue">LOW</div>
+                </div>
+                <div class="metric-pill">
+                    <span class="label">Alerts</span>
+                    <div class="value" id="alertCountValue">0</div>
+                </div>
+                <div class="metric-pill">
+                    <span class="label">Cameras</span>
+                    <div class="value" id="cameraCountValue">0</div>
+                </div>
+            </div>
+            <canvas id="crowdMapCanvas" width="800" height="500"></canvas>
+
+            <!-- Floating Video Streaming Element -->
+            <div class="camera-feed-modal" id="cameraFeedArea">
+                <div class="feed-header">
+                    <span id="cameraTitle">CAM_21 FEED PREVIEW</span>
+                    <span style="cursor:pointer; color:var(--text-muted);" onclick="closeFeed()">✕</span>
+                </div>
+                <div class="feed-placeholder">
+                    <div class="scanlines"></div>
+                    <div class="feed-text">REC ● ANALYZING_STREAM</div>
+                    <!-- Drawing Radar sweep -->
+                    <div
+                        style="position: absolute; border: 1px solid var(--accent-cyan); border-radius: 50%; opacity: 0.15; width: 120px; height: 120px; animation: pulse 2s infinite;">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- =====================================================================
+         2. INTERACTIVE MAP DRAWING & WEBSOCKET SYNC SCRIPTING
+         ===================================================================== -->
+    <script>
+        const canvas = document.getElementById('crowdMapCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const tgHeatmap = document.getElementById('tgHeatmap');
+        const tgArrows = document.getElementById('tgArrows');
+        const tgEvac = document.getElementById('tgEvac');
+
+        const socketIndicator = document.getElementById('socketIndicator');
+        const socketStatusText = document.getElementById('socketStatusText');
+        const metricTicker = document.getElementById('metricTicker');
+        const crowdCountValue = document.getElementById('crowdCountValue');
+        const riskValue = document.getElementById('riskValue');
+        const alertCountValue = document.getElementById('alertCountValue');
+        const cameraCountValue = document.getElementById('cameraCountValue');
+        const cameraFeedArea = document.getElementById('cameraFeedArea');
+        const cameraTitle = document.getElementById('cameraTitle');
+
+        // Layer Config states
+        let showHeatmap = true;
+        let showArrows = true;
+        let showEvac = false;
+
+        // Data arrays from WebSockets
+        let currentPedestrians = [];
+        let previousPedestrians = [];
+        let lastPacketTime = Date.now();
+        let currentSnapshot = null;
+        let cameras = [
+            { id: "CAM_21", x: 400, y: 250, status: "ACTIVE" },
+            { id: "CAM_12", x: 150, y: 250, status: "ACTIVE" },
+            { id: "CAM_15", x: 650, y: 250, status: "ACTIVE" }
+        ];
+
+        // Spatial Layout dimensions corresponding to server logic pathing
+        const entryGates = [{ x: 50, y: 250, name: "GATE_A" }, { x: 400, y: 40, name: "GATE_B" }];
+        const exitGates = [{ x: 750, y: 250, name: "EXIT_A" }, { x: 400, y: 460, name: "EXIT_B" }];
+        const restrictedZone = { x: 50, y: 50, width: 180, height: 120, label: "SECURE ZONE O-2" };
+
+        // WebSockets Engine Connect
+        let ws;
+        function connectWebSockets() {
+            // Target the dedicated local map WebSocket service
+            ws = new WebSocket('ws://localhost:8001/ws/map');
+
+            ws.onopen = () => {
+                socketIndicator.className = 'indicator online';
+                socketStatusText.innerText = 'WS Engine: CONNECTED';
+                console.log("WebSocket connected.");
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                currentSnapshot = data;
+                previousPedestrians = [...currentPedestrians];
+                currentPedestrians = data.pedestrians;
+                cameras = data.cameras || cameras;
+                lastPacketTime = Date.now();
+
+                metricTicker.innerText = `Active Tracking: ${currentPedestrians.length} Persons | Risk ${data.risk?.level || 'LOW'}`;
+                crowdCountValue.textContent = data.crowd_count ?? currentPedestrians.length;
+                riskValue.textContent = data.risk?.level || 'LOW';
+                riskValue.className = 'value ' + (data.risk?.level === 'HIGH' ? 'alert' : (data.risk?.level === 'MEDIUM' ? 'warn' : ''));
+                alertCountValue.textContent = data.alerts?.length || 0;
+                cameraCountValue.textContent = (data.cameras || []).filter(c => c.status === 'ACTIVE').length;
+            };
+
+            ws.onerror = (err) => {
+                console.log("WebSocket encountered error: ", err);
+            };
+
+            ws.onclose = () => {
+                socketIndicator.className = 'indicator';
+                socketStatusText.innerText = 'WS Engine: OFFLINE';
+                console.log("WebSocket disconnected. Falling back to local coordinate updates simulation.");
+                ws = null;
+                // Auto reconnect attempt after 6 seconds
+                setTimeout(connectWebSockets, 6000);
+            };
+        }
+
+        // -------------------------------------------------------------
+        // LOCAL SIMULATED GENERATOR LOOP IF WEBSOCKETS IS OFFLINE
+        // -------------------------------------------------------------
+        const dummyPedestrians = [];
+        for (let i = 0; i < 40; i++) {
+            const start = entryGates[Math.floor(Math.random() * entryGates.length)];
+            const target = exitGates[Math.floor(Math.random() * exitGates.length)];
+            dummyPedestrians.push({
+                id: i,
+                x: start.x + (Math.random() - 0.5) * 30,
+                y: start.y + (Math.random() - 0.5) * 30,
+                tx: target.x,
+                ty: target.y,
+                speed: 1.2 + Math.random() * 1.5,
+                color: 'cyan'
+            });
+        }
+
+        function runLocalCoordinatesSimulation() {
+            if (ws) return; // Skip if live WebSocket data is flowing
+
+            previousPedestrians = dummyPedestrians.map(p => ({ ...p }));
+            dummyPedestrians.forEach(p => {
+                const dx = p.tx - p.x;
+                const dy = p.ty - p.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < 15) {
+                    const start = entryGates[Math.floor(Math.random() * entryGates.length)];
+                    const target = exitGates[Math.floor(Math.random() * exitGates.length)];
+                    p.x = start.x + (Math.random() - 0.5) * 30;
+                    p.y = start.y + (Math.random() - 0.5) * 30;
+                    p.tx = target.x;
+                    p.ty = target.y;
+                    p.speed = 1.2 + Math.random() * 1.5;
+                } else {
+                    p.x += (dx / dist) * p.speed + (Math.random() - 0.5) * 0.8;
+                    p.y += (dy / dist) * p.speed + (Math.random() - 0.5) * 0.8;
+                }
+
+                // Set color if inside the restricted bounds
+                if (p.x >= restrictedZone.x && p.x <= (restrictedZone.x + restrictedZone.width) &&
+                    p.y >= restrictedZone.y && p.y <= (restrictedZone.y + restrictedZone.height)) {
+                    p.color = 'red'; // trespasser flag
+                } else {
+                    p.color = 'cyan';
+                }
+            });
+            currentPedestrians = dummyPedestrians.map(p => ({ ...p }));
+            currentSnapshot = {
+                crowd_count: currentPedestrians.length,
+                heatmap: [],
+                risk: { level: 'LOW', score: 30 },
+                alerts: [],
+                cameras: cameras,
+            };
+            lastPacketTime = Date.now();
+            metricTicker.innerText = `Active Tracking: ${currentPedestrians.length} Persons (SIMULATED)`;
+            crowdCountValue.textContent = currentPedestrians.length;
+            riskValue.textContent = 'LOW';
+            riskValue.className = 'value';
+            alertCountValue.textContent = 0;
+            cameraCountValue.textContent = cameras.filter(c => c.status === 'ACTIVE').length;
+        }
+
+        // Run local updates loop every second as heartbeat
+        setInterval(runLocalCoordinatesSimulation, 1000);
+
+        // -------------------------------------------------------------
+        // ANIMATION & CANVAS RENDERING (60 FPS INTERPOLATION)
+        // -------------------------------------------------------------
+        function getInterpolatedPedestrians(prevMap) {
+            const now = Date.now();
+            // Calculate progress through the current 1-second transmission window (clamp to 1.0)
+            const progress = Math.min((now - lastPacketTime) / 1000.0, 1.0);
+
+            return currentPedestrians.map(current => {
+                const prev = prevMap[current.id] || current;
+                // Linear interpolation logic
+                return {
+                    id: current.id,
+                    x: prev.x + (current.x - prev.x) * progress,
+                    y: prev.y + (current.y - prev.y) * progress,
+                    color: current.color
+                };
+            });
+        }
+
+        function drawVenueLayout() {
+            ctx.fillStyle = '#030509';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw walkway grids
+            ctx.strokeStyle = '#131b35';
+            ctx.lineWidth = 40;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            // East-West corridor
+            ctx.beginPath();
+            ctx.moveTo(50, 250);
+            ctx.lineTo(750, 250);
+            ctx.stroke();
+
+            // North-South Corridor
+            ctx.beginPath();
+            ctx.moveTo(400, 40);
+            ctx.lineTo(400, 460);
+            ctx.stroke();
+
+            // Renders restricted zone boxes
+            ctx.fillStyle = 'rgba(255, 42, 84, 0.05)';
+            ctx.fillRect(restrictedZone.x, restrictedZone.y, restrictedZone.width, restrictedZone.height);
+
+            // Draw diagonal border outline hatchings
+            ctx.strokeStyle = 'rgba(255, 42, 84, 0.25)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(restrictedZone.x, restrictedZone.y, restrictedZone.width, restrictedZone.height);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(restrictedZone.x, restrictedZone.y, restrictedZone.width, restrictedZone.height);
+            ctx.clip();
+
+            ctx.strokeStyle = 'rgba(255, 42, 84, 0.15)';
+            ctx.lineWidth = 1;
+            for (let i = -100; i < restrictedZone.width + 100; i += 15) {
+                ctx.beginPath();
+                ctx.moveTo(restrictedZone.x + i, restrictedZone.y);
+                ctx.lineTo(restrictedZone.x + i + 100, restrictedZone.y + restrictedZone.height);
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // Label text for Restricted boundaries
+            ctx.fillStyle = 'var(--status-red)';
+            ctx.font = 'bold 8px "JetBrains Mono"';
+            ctx.fillText(restrictedZone.label, restrictedZone.x + 8, restrictedZone.y + 15);
+
+            // Draw entry gates labels (Green labels)
+            entryGates.forEach(g => {
+                ctx.fillStyle = '#0c1122';
+                ctx.strokeStyle = 'var(--status-green)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(g.x, g.y, 14, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = 'var(--status-green)';
+                ctx.font = 'bold 8px "Inter"';
+                ctx.textAlign = 'center';
+                ctx.fillText("IN", g.x, g.y + 3);
+            });
+
+            // Draw exit gates labels (Red tags)
+            exitGates.forEach(g => {
+                ctx.fillStyle = '#0c1122';
+                ctx.strokeStyle = 'var(--status-red)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(g.x, g.y, 14, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = 'var(--status-red)';
+                ctx.font = 'bold 8px "Inter"';
+                ctx.textAlign = 'center';
+                ctx.fillText("OUT", g.x, g.y + 3);
+            });
+        }
+
+        // Draw dynamic evacuation path paths
+        function drawEmergencyRoutes() {
+            ctx.strokeStyle = 'var(--status-green)';
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.setLineDash([8, 12]);
+
+            // Pulsing flowing green dash line offset animation
+            const dashOffset = (Date.now() / 40) % 20;
+            ctx.lineDashOffset = -dashOffset;
+
+            // Direct route pathway exits
+            ctx.beginPath();
+            ctx.moveTo(350, 250);
+            ctx.lineTo(750, 250);
+            ctx.stroke();
+            ctx.setLineDash([]); // clear dash configs
+        }
+
+        // Draw radial heat vectors matching pedestrian clusters densities
+        function drawHeatmapLayer(peds) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+
+            if (currentSnapshot?.heatmap?.length) {
+                currentSnapshot.heatmap.forEach(cell => {
+                    const gradient = ctx.createRadialGradient(cell.x, cell.y, 2, cell.x, cell.y, 40 * (0.7 + cell.weight));
+                    gradient.addColorStop(0, 'rgba(255, 42, 84, 0.44)');
+                    gradient.addColorStop(0.35, 'rgba(255, 179, 0, 0.22)');
+                    gradient.addColorStop(1, 'rgba(3, 5, 9, 0)');
+
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(cell.x, cell.y, 40 * (0.7 + cell.weight), 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            } else {
+                peds.forEach(p => {
+                    const gradient = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 35);
+                    gradient.addColorStop(0, 'rgba(255, 42, 84, 0.44)');
+                    gradient.addColorStop(0.3, 'rgba(255, 179, 0, 0.22)');
+                    gradient.addColorStop(1, 'rgba(3, 5, 9, 0)');
+
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 35, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            }
+            ctx.restore();
+        }
+
+        function drawPedestriansParticles(peds) {
+            peds.forEach(p => {
+                // Colored circles mapping tracked individuals coordinates
+                ctx.fillStyle = p.color === 'red' ? 'var(--status-red)' : 'var(--accent-cyan)';
+                ctx.shadowColor = p.color === 'red' ? 'rgba(255, 42, 84, 0.6)' : 'rgba(0, 229, 255, 0.4)';
+                ctx.shadowBlur = 6;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Reset shadow values
+                ctx.shadowBlur = 0;
+            });
+        }
+
+        // Renders vector flow direction arrows pointing forward
+        function drawFlowArrows(peds, prevMap) {
+            ctx.strokeStyle = 'rgba(0, 229, 255, 0.35)';
+            ctx.lineWidth = 1.5;
+
+            peds.forEach(p => {
+                // Calculate historical movement vectors using fast map lookup
+                const matchedPrev = prevMap[p.id];
+                if (!matchedPrev) return;
+
+                const dx = p.x - matchedPrev.x;
+                const dy = p.y - matchedPrev.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist > 1.2) {
+                    const arrowScale = 8;
+                    const vx = (dx / dist) * arrowScale;
+                    const vy = (dy / dist) * arrowScale;
+
+                    // Draw vector direct line
+                    ctx.beginPath();
+                    ctx.moveTo(p.x, p.y);
+                    ctx.lineTo(p.x + vx, p.y + vy);
+                    ctx.stroke();
+                }
+            });
+        }
+
+        // Draw camera station nodes
+        function drawCameraSensors() {
+            cameras.forEach(cam => {
+                ctx.fillStyle = 'var(--bg-secondary)';
+                ctx.strokeStyle = 'var(--accent-blue)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(cam.x, cam.y, 10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Draw inner core identifier
+                ctx.fillStyle = 'var(--accent-cyan)';
+                ctx.beginPath();
+                ctx.arc(cam.x, cam.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Label Text
+                ctx.fillStyle = 'var(--text-primary)';
+                ctx.font = '8px "JetBrains Mono"';
+                ctx.textAlign = 'center';
+                ctx.fillText(cam.id, cam.x, cam.y - 14);
+            });
+        }
+
+        // Check if cursor clicks camera icons
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            // Scale click coordinates matching canvas viewport
+            const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
+            const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+            cameras.forEach(cam => {
+                const dist = Math.sqrt((clickX - cam.x) ** 2 + (clickY - cam.y) ** 2);
+                if (dist < 15) {
+                    // Open simulated videostream popup overlay
+                    cameraTitle.innerText = `${cam.id} STREAM PREVIEW`;
+                    cameraFeedArea.style.display = 'block';
+                }
+            });
+        });
+
+        function closeFeed() {
+            cameraFeedArea.style.display = 'none';
+        }
+
+        // -------------------------------------------------------------
+        // ANIMATION ORCHESTRATOR LOOP (60 FPS DRAW RUN)
+        // -------------------------------------------------------------
+        function tick() {
+            // Build key index map of previous states to improve interpolation and arrow rendering to O(N)
+            const prevMap = {};
+            for (let i = 0; i < previousPedestrians.length; i++) {
+                const p = previousPedestrians[i];
+                prevMap[p.id] = p;
+            }
+
+            const interpolatedPeds = getInterpolatedPedestrians(prevMap);
+
+            drawVenueLayout();
+
+            if (showHeatmap) {
+                drawHeatmapLayer(interpolatedPeds);
+            }
+            if (showEvac) {
+                drawEmergencyRoutes();
+            }
+            if (showArrows) {
+                drawFlowArrows(interpolatedPeds, prevMap);
+            }
+
+            drawPedestriansParticles(interpolatedPeds);
+            drawCameraSensors();
+
+            // Loop frame request
+            requestAnimationFrame(tick);
+        }
+
+        // Setup Control Widgets listeners
+        tgHeatmap.addEventListener('click', () => {
+            showHeatmap = !showHeatmap;
+            tgHeatmap.classList.toggle('enabled', showHeatmap);
+        });
+
+        tgArrows.addEventListener('click', () => {
+            showArrows = !showArrows;
+            tgArrows.classList.toggle('enabled', showArrows);
+        });
+
+        tgEvac.addEventListener('click', () => {
+            showEvac = !showEvac;
+            tgEvac.classList.toggle('enabled', showEvac);
+        });
+
+        // Initialize application loops
+        connectWebSockets();
+        requestAnimationFrame(tick);
+    </script>
+</body>
+
+</html>

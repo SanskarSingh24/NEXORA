@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXORA Command Center - Emergency Alert System</title>
+    <!-- SEO Meta Tags -->
+    <meta name="description"
+        content="AI-Powered Predictive Crowd Intelligence & Decision Support Platform. Real-time monitoring, anomaly alerts, and dynamic route orchestration.">
+    <meta name="robots" content="index, follow">
+    <!-- Typography Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+
+    <style>
+        /* =====================================================================
+           1. MODERN COMMAND CENTER DESIGN SYSTEM (VANILLA CSS)
+           ===================================================================== */
+        :root {
+            --bg-primary: #070a13;
+            --bg-secondary: #0c1122;
+            --bg-tertiary: #141b34;
+
+            --border-subtle: #1f2a4c;
+            --border-glow-red: rgba(255, 42, 84, 0.4);
+
+            --accent-cyan: #00e5ff;
+            --accent-blue: #0066ff;
+
+            --status-green: #00e5a3;
+            --status-yellow: #ffb300;
+            --status-orange: #ff6d00;
+            --status-red: #ff2a54;
+
+            --text-primary: #e2e8f0;
+            --text-muted: #94a3b8;
+
+            --neon-glow-cyan: 0 0 10px rgba(0, 229, 255, 0.3);
+            --neon-glow-red: 0 0 20px rgba(255, 42, 84, 0.6);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Standard Web Layout structures */
+        .sidebar {
+            width: 250px;
+            background-color: var(--bg-secondary);
+            border-right: 1px solid var(--border-subtle);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            z-index: 100;
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        .logo-icon {
+            width: 24px;
+            height: 24px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            border-radius: 6px;
+            box-shadow: var(--neon-glow-cyan);
+        }
+
+        .logo-text {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 800;
+            font-size: 1.3rem;
+            letter-spacing: 1px;
+            background: linear-gradient(to right, #ffffff, var(--accent-cyan));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .menu-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .menu-item.active,
+        .menu-item:hover {
+            color: var(--text-primary);
+            background-color: var(--bg-tertiary);
+            border-left: 3px solid var(--accent-cyan);
+        }
+
+        .operator-panel {
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .operator-title {
+            font-size: 0.70rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .operator-name {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--accent-cyan);
+        }
+
+        /* Main Console Panel */
+        .main-console {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .navbar {
+            height: 70px;
+            background-color: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 30px;
+        }
+
+        .nav-title {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 1.2rem;
+            letter-spacing: 0.5px;
+        }
+
+        .nav-status-indicators {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .threat-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            background-color: rgba(0, 229, 163, 0.1);
+            border: 1px solid var(--status-green);
+            color: var(--status-green);
+            transition: all 0.3s ease;
+        }
+
+        /* Workspace Grid */
+        .workspace-grid {
+            flex-grow: 1;
+            padding: 24px;
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+            height: calc(100vh - 70px);
+            overflow: hidden;
+        }
+
+        /* Left Panel - 3D/2D Spatial Workspace */
+        .left-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .map-section {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            flex-grow: 1;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .map-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .map-container {
+            flex-grow: 1;
+            position: relative;
+            background-color: #05080e;
+        }
+
+        /* SVG Grid Elements */
+        .vector-map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .grid-line {
+            stroke: #1f2a4c;
+            stroke-dasharray: 2 4;
+        }
+
+        .hallway-path {
+            stroke: #141b34;
+            stroke-width: 44;
+            stroke-linecap: round;
+            fill: none;
+        }
+
+        .walkway {
+            stroke: var(--bg-tertiary);
+            stroke-width: 40;
+            stroke-linecap: round;
+            fill: none;
+        }
+
+        .camera-marker {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .camera-range {
+            fill: rgba(0, 229, 255, 0.05);
+            stroke: rgba(0, 229, 255, 0.2);
+            stroke-dasharray: 3 3;
+            transition: all 0.3s ease;
+        }
+
+        .camera-marker:hover .camera-range {
+            fill: rgba(0, 229, 255, 0.12);
+        }
+
+        /* Highlighted Area animation parameter */
+        .affected-area-pulse {
+            fill: rgba(255, 42, 84, 0.2);
+            stroke: var(--status-red);
+            stroke-width: 2;
+            animation: pulse-red 2s infinite ease-in-out;
+            display: none;
+        }
+
+        @keyframes pulse-red {
+            0% {
+                fill: rgba(255, 42, 84, 0.15);
+                stroke-opacity: 0.6;
+            }
+
+            50% {
+                fill: rgba(255, 42, 84, 0.35);
+                stroke-opacity: 1.0;
+            }
+
+            100% {
+                fill: rgba(255, 42, 84, 0.15);
+                stroke-opacity: 0.6;
+            }
+        }
+
+        /* Simulated Log Logs Sector */
+        .system-log-terminal {
+            height: 180px;
+            background-color: #04060b;
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            overflow-y: auto;
+        }
+
+        .log-line {
+            display: flex;
+            gap: 10px;
+        }
+
+        .log-timestamp {
+            color: var(--accent-cyan);
+        }
+
+        .log-tag {
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .log-tag.success {
+            color: var(--status-green);
+        }
+
+        .log-tag.warning {
+            color: var(--status-yellow);
+        }
+
+        .log-tag.critical {
+            color: var(--status-red);
+        }
+
+        /* Right Panel - Command Options & Simulation Controllers */
+        .right-panel {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        .section-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border-left: 3px solid var(--accent-cyan);
+            padding-left: 10px;
+            margin-bottom: 12px;
+        }
+
+        .simulation-slider-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background-color: var(--bg-tertiary);
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+        }
+
+        .simulator-slider {
+            width: 100%;
+            height: 5px;
+            background: var(--bg-primary);
+            outline: none;
+            border-radius: 5px;
+            cursor: pointer;
+            accent-color: var(--accent-cyan);
+        }
+
+        .operational-btn {
+            background: linear-gradient(135deg, var(--accent-blue), #0044cc);
+            border: none;
+            color: white;
+            padding: 12px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .operational-btn:hover {
+            box-shadow: var(--neon-glow-cyan);
+            filter: brightness(1.1);
+        }
+
+        /* =====================================================================
+           2. DYNAMIC CRITICAL ALARM MODAL OVERLAY (UI POPUP)
+           ===================================================================== */
+        .alert-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(3, 5, 10, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+
+        .alert-modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .alert-container {
+            width: 680px;
+            background-color: var(--bg-secondary);
+            border: 2px solid var(--status-red);
+            box-shadow: var(--neon-glow-red);
+            border-radius: 12px;
+            overflow: hidden;
+            animation: shake 0.6s linear;
+        }
+
+        @keyframes shake {
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            10%,
+            30%,
+            50%,
+            70%,
+            90% {
+                transform: translateY(-5px);
+            }
+
+            20%,
+            40%,
+            60%,
+            80% {
+                transform: translateY(5px);
+            }
+        }
+
+        .header-bar-critical {
+            background-color: var(--status-red);
+            color: white;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-bar-critical h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 800;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .alert-body-content {
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .meta-values-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .val-badge {
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .badge-title {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .badge-value {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 600;
+        }
+
+        .badge-value.critical-count {
+            color: var(--status-red);
+        }
+
+        .xai-section {
+            border: 1px dashed var(--border-subtle);
+            padding: 16px;
+            border-radius: 8px;
+            background-color: rgba(20, 27, 52, 0.3);
+        }
+
+        .shap-factors-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .factor-metric {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            background-color: var(--bg-primary);
+            padding: 6px 10px;
+            border-radius: 4px;
+        }
+
+        .factor-name {
+            color: var(--text-muted);
+        }
+
+        .factor-val {
+            color: var(--status-red);
+            font-weight: 600;
+        }
+
+        .recommendation-panel {
+            background-color: rgba(0, 229, 255, 0.05);
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            padding: 16px;
+            border-radius: 8px;
+        }
+
+        .recommendation-heading {
+            font-size: 0.85rem;
+            font-weight: bold;
+            color: var(--accent-cyan);
+            margin-bottom: 6px;
+        }
+
+        .recommendations-list {
+            padding-left: 20px;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .acknowledgement-btn {
+            background-color: var(--status-red);
+            border: none;
+            color: white;
+            font-size: 1rem;
+            font-weight: bold;
+            padding: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .acknowledgement-btn:hover {
+            background-color: #cc1b3e;
+            box-shadow: var(--neon-glow-red);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- SIDEBAR NAVIGATION -->
+    <nav class="sidebar" aria-label="Main Navigation">
+        <div>
+            <div class="logo-area">
+                <div class="logo-icon"></div>
+                <div class="logo-text">NEXORA</div>
+            </div>
+            <ul class="menu-list">
+                <li class="menu-item active">[Map] Spatial Console</li>
+                <li class="menu-item">[Cam] Connected Arrays</li>
+                <li class="menu-item">[Charts] Analytics dashboard</li>
+                <li class="menu-item">[File] Database Reports</li>
+                <li class="menu-item">[Cog] Settings Option</li>
+            </ul>
+        </div>
+        <div class="operator-panel">
+            <div class="operator-title">System Operator</div>
+            <div class="operator-name">OP-0428</div>
+        </div>
+    </nav>
+
+    <!-- MAIN INTERFACE CONSOLE -->
+    <main class="main-console">
+        <!-- NAVBAR -->
+        <header class="navbar">
+            <h1 class="nav-title">EMERGENCY ALERT & STEERING SYSTEM</h1>
+            <div class="nav-status-indicators">
+                <div class="threat-indicator" id="navbarThreatIndicator">
+                    SYSTEM STATE: SAFE
+                </div>
+            </div>
+        </header>
+
+        <!-- WORKSPACE GRID -->
+        <div class="workspace-grid">
+
+            <!-- LEFT AREA: MAP & LOG CONSOLES -->
+            <div class="left-panel">
+                <section class="map-section" aria-label="Interactive Map Workspace">
+                    <div class="map-header">
+                        <h2>Real-time Interactive 2D Crowd Map</h2>
+                        <span style="font-size: 0.8rem; color: var(--accent-cyan);">Zone: Tunnel Level 2</span>
+                    </div>
+                    <div class="map-container">
+                        <!-- Custom vector map representing corridor routes -->
+                        <svg class="vector-map" viewBox="0 0 600 400">
+                            <!-- Background Grid -->
+                            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                                <rect width="40" height="40" fill="none" />
+                                <path d="M 40 0 L 0 0 0 40" fill="none" class="grid-line" />
+                            </pattern>
+                            <rect width="100%" height="100%" fill="url(#grid)" />
+
+                            <!-- Hallways walkways layout -->
+                            <path class="hallway-path" d="M 50,200 L 550,200" />
+                            <path class="hallway-path" d="M 300,50 L 300,350" />
+
+                            <path class="walkway" d="M 50,200 L 550,200" />
+                            <path class="walkway" d="M 300,50 L 300,350" />
+
+                            <!-- Affected Zone Pulse Overlay -->
+                            <circle class="affected-area-pulse" id="hotspotCircle" cx="300" cy="200" r="60" />
+
+                            <!-- Camera stations markers -->
+                            <g class="camera-marker" id="cam01">
+                                <circle cx="300" cy="200" r="8" fill="var(--accent-cyan)" stroke="white"
+                                    stroke-width="2" />
+                                <circle cx="300" cy="200" r="30" class="camera-range" />
+                                <text x="315" y="195" fill="var(--text-primary)" font-size="9"
+                                    font-family="'JetBrains Mono'">CAM_21</text>
+                            </g>
+                            <g class="camera-marker" id="cam02">
+                                <circle cx="100" cy="200" r="8" fill="var(--status-green)" stroke="white"
+                                    stroke-width="2" />
+                                <text x="115" y="195" fill="var(--text-primary)" font-size="9"
+                                    font-family="'JetBrains Mono'">CAM_12</text>
+                            </g>
+                            <g class="camera-marker" id="cam03">
+                                <circle cx="500" cy="200" r="8" fill="var(--status-green)" stroke="white"
+                                    stroke-width="2" />
+                                <text x="515" y="195" fill="var(--text-primary)" font-size="9"
+                                    font-family="'JetBrains Mono'">CAM_15</text>
+                            </g>
+                        </svg>
+                    </div>
+                </section>
+
+                <!-- Database Ingest Logs terminal -->
+                <section class="system-log-terminal" id="logTerminalArea" aria-label="System Logs Console">
+                    <div class="log-line">
+                        <span class="log-timestamp">[01:28:01]</span>
+                        <span class="log-tag success">[SYS]</span>
+                        <span>Platform pipelines initialized. Connecting camera telemetry...</span>
+                    </div>
+                    <div class="log-line">
+                        <span class="log-timestamp">[01:28:03]</span>
+                        <span class="log-tag success">[POSTGRESQL]</span>
+                        <span>Registered Camera Station CAM_21 to database.</span>
+                    </div>
+                </section>
+            </div>
+
+            <!-- RIGHT PANEL: SIMULATION CONTROLS -->
+            <section class="right-panel" aria-label="Simulation Settings">
+                <div class="section-title">Simulator Control Panel</div>
+                <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
+                    Adjust simulated crowd variables below to verify alert responses. Transitioning indices into
+                    Critical levels activates popup, sound alert, and highlighted area triggers.
+                </p>
+
+                <!-- Core metric controls -->
+                <div class="simulation-slider-container">
+                    <div class="slider-label">
+                        <span>Crowd Density</span>
+                        <span id="densityVal">1.2 ppl/m²</span>
+                    </div>
+                    <input type="range" class="simulator-slider" id="densitySlider" min="0.5" max="8.0" step="0.1"
+                        value="1.2">
+                </div>
+
+                <div class="simulation-slider-container">
+                    <div class="slider-label">
+                        <span>Occupancy Percent</span>
+                        <span id="occupancyVal">35.0%</span>
+                    </div>
+                    <input type="range" class="simulator-slider" id="occupancySlider" min="5" max="150" value="35">
+                </div>
+
+                <div class="simulation-slider-container">
+                    <div class="slider-label">
+                        <span>Queue Length</span>
+                        <span id="queueVal">4 Persons</span>
+                    </div>
+                    <input type="range" class="simulator-slider" id="queueSlider" min="0" max="50" value="4">
+                </div>
+
+                <!-- Simulation Trigger Buttons -->
+                <button type="button" class="operational-btn" id="simulateCriticalBtn"
+                    style="background: linear-gradient(135deg, var(--status-red), #990033)">
+                    Simulate Critical Threat Alert (Red)
+                </button>
+            </section>
+        </div>
+    </main>
+
+    <!-- =====================================================================
+         3. CRITICAL ALARM MODAL OVERLAY (UI POPUP)
+         ===================================================================== -->
+    <section class="alert-modal-overlay" id="alertModal" aria-hidden="true" role="dialog">
+        <div class="alert-container">
+            <div class="header-bar-critical">
+                <h2>⚠️ CRITICAL CROWD PRESSURE ALERT</h2>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.95rem;">REF: CR-1782</span>
+            </div>
+
+            <div class="alert-body-content">
+                <div class="meta-values-row">
+                    <div class="val-badge">
+                        <div class="badge-title">Monitored Zone</div>
+                        <div class="badge-value">West Corridor Crossing (CAM_21)</div>
+                    </div>
+                    <div class="val-badge">
+                        <div class="badge-title">AI Prediction Confidence</div>
+                        <div class="badge-value" style="color: var(--accent-cyan)" id="alertConfidence">96.0%</div>
+                    </div>
+                    <div class="val-badge">
+                        <div class="badge-title">Active Zone Density</div>
+                        <div class="badge-value critical-count" id="alertDensity">5.6 ppl/m²</div>
+                    </div>
+                    <div class="val-badge">
+                        <div class="badge-title">Queue Length</div>
+                        <div class="badge-value critical-count" id="alertQueue">42 Persons</div>
+                    </div>
+                </div>
+
+                <!-- Explainable AI metrics values -->
+                <div class="xai-section">
+                    <div class="recommendation-heading" style="color: var(--text-primary);">SHAP Explanation (Feature
+                        Influence)</div>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px;" id="alertExplanation">
+                        Prediction is driven primarily by extreme local queue length and crowd density exceeding safety
+                        limits.
+                    </p>
+                    <div class="shap-factors-grid">
+                        <div class="factor-metric">
+                            <span class="factor-name">Occupancy Influence</span>
+                            <span class="factor-val">+34%</span>
+                        </div>
+                        <div class="factor-metric">
+                            <span class="factor-name">Queue Influence</span>
+                            <span class="factor-val">+28%</span>
+                        </div>
+                        <div class="factor-metric">
+                            <span class="factor-name">Flow Restriction</span>
+                            <span class="factor-val">+22%</span>
+                        </div>
+                        <div class="factor-metric">
+                            <span class="factor-name">Inflow Speed</span>
+                            <span class="factor-val">+16%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Recommendations Panel -->
+                <div class="recommendation-panel">
+                    <div class="recommendation-heading">System Decision Recommendations</div>
+                    <ol class="recommendations-list">
+                        <li>Initiate emergency exit paths routing: Guide commuters via Tunnel 4 exit paths.</li>
+                        <li>Automate digital signage layout directives to display evacuation arrows.</li>
+                        <li>Dispatch SMS alerts to closest first-responder units.</li>
+                    </ol>
+                </div>
+
+                <!-- Acknowledgement button -->
+                <button type="button" class="acknowledgement-btn" id="acknowledgeBtn">
+                    ACKNOWLEDGE EMERGENCY & DISPATCH WORKFLOW
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- =====================================================================
+         4. SYSTEM SCRIPTING: SIMULATION, AUDIO SYNTH, DB INTEGRATION
+         ===================================================================== -->
+    <script>
+        // DOM Nodes selection variables
+        const densitySlider = document.getElementById('densitySlider');
+        const occupancySlider = document.getElementById('occupancySlider');
+        const queueSlider = document.getElementById('queueSlider');
+
+        const densityVal = document.getElementById('densityVal');
+        const occupancyVal = document.getElementById('occupancyVal');
+        const queueVal = document.getElementById('queueVal');
+
+        const simulateCriticalBtn = document.getElementById('simulateCriticalBtn');
+        const acknowledgeBtn = document.getElementById('acknowledgeBtn');
+        const alertModal = document.getElementById('alertModal');
+        const hotspotCircle = document.getElementById('hotspotCircle');
+        const logTerminalArea = document.getElementById('logTerminalArea');
+        const navbarThreatIndicator = document.getElementById('navbarThreatIndicator');
+
+        // Alert detail values inside modal
+        const alertDensity = document.getElementById('alertDensity');
+        const alertQueue = document.getElementById('alertQueue');
+        const alertConfidence = document.getElementById('alertConfidence');
+        const alertExplanation = document.getElementById('alertExplanation');
+
+        let audioContext;
+        let isAlarmActive = false;
+        let alarmIntervalId = null;
+
+        // Formats timestamps
+        function getLogTimestamp() {
+            const now = new Date();
+            return `[${now.toTimeString().split(' ')[0]}]`;
+        }
+
+        // Writes logs to console area
+        function writeConsoleLog(tag, message, statusClass = 'success') {
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            line.innerHTML = `
+                <span class="log-timestamp">${getLogTimestamp()}</span>
+                <span class="log-tag ${statusClass}">[${tag}]</span>
+                <span>${message}</span>
+            `;
+            logTerminalArea.appendChild(line);
+            logTerminalArea.scrollTop = logTerminalArea.scrollHeight;
+        }
+
+        // Programmatic Audio Synthesizer (Web Audio API)
+        function playAlarmTone() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+
+            osc.connect(gain);
+            gain.connect(audioContext.destination);
+
+            osc.type = 'sawtooth';
+            // Alert warning tone oscillating at 880Hz to catch attention
+            osc.frequency.setValueAtTime(880, audioContext.currentTime);
+
+            gain.gain.setValueAtTime(0.12, audioContext.currentTime);
+            gain.gain.linearRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
+
+            osc.start();
+            osc.stop(audioContext.currentTime + 0.4);
+        }
+
+        function startSoundAlarm() {
+            isAlarmActive = true;
+            playAlarmTone();
+            alarmIntervalId = setInterval(playAlarmTone, 1000);
+        }
+
+        function stopSoundAlarm() {
+            isAlarmActive = false;
+            if (alarmIntervalId) {
+                clearInterval(alarmIntervalId);
+                alarmIntervalId = null;
+            }
+        }
+
+        // Trigger safety class state modifications
+        function evaluateSystemRisk(d, occ, q) {
+            let risk = 'GREEN';
+            let statusText = 'SYSTEM STATE: SAFE';
+            let color = 'var(--status-green)';
+            let bgColor = 'rgba(0, 229, 163, 0.1)';
+
+            if (d >= 4.5 || occ >= 100 || q >= 35) {
+                risk = 'CRITICAL';
+                statusText = 'SYSTEM STATE: CRITICAL ANOMALY (RED)';
+                color = 'var(--status-red)';
+                bgColor = 'rgba(255, 42, 84, 0.15)';
+                triggerCriticalState(d, occ, q);
+            } else if (d >= 3.0 || occ >= 80 || q >= 20) {
+                risk = 'ORANGE';
+                statusText = 'SYSTEM STATE: HIGH PRESSURE (ORANGE)';
+                color = 'var(--status-orange)';
+                bgColor = 'rgba(255, 109, 0, 0.15)';
+                deactivateCriticalState();
+            } else if (d >= 1.8 || occ >= 60 || q >= 10) {
+                risk = 'YELLOW';
+                statusText = 'SYSTEM STATE: MODERATE DENSITY (YELLOW)';
+                color = 'var(--status-yellow)';
+                bgColor = 'rgba(255, 179, 0, 0.15)';
+                deactivateCriticalState();
+            } else {
+                deactivateCriticalState();
+            }
+
+            navbarThreatIndicator.innerText = statusText;
+            navbarThreatIndicator.style.color = color;
+            navbarThreatIndicator.style.border = `1px solid ${color}`;
+            navbarThreatIndicator.style.backgroundColor = bgColor;
+        }
+
+        // Activates critical UI modal overlays and sounds triggers
+        function triggerCriticalState(d, occ, q) {
+            if (alertModal.classList.contains('active')) return; // already active
+
+            // Update Alert Modal text content variables
+            alertDensity.innerText = `${d.toFixed(1)} ppl/m²`;
+            alertQueue.innerText = `${q} Persons`;
+            alertConfidence.innerText = '96.2%';
+            alertExplanation.innerText = `SHAP identifies density (${d.toFixed(1)} ppl/m²) and queue count (${q} ppl) as the core reasons behind priority class 3.`;
+
+            // Active visual overlay and highlighting
+            alertModal.classList.add('active');
+            alertModal.setAttribute('aria-hidden', 'false');
+            hotspotCircle.style.display = 'block';
+
+            // Logs output events
+            writeConsoleLog('AI_PREDICT', `XGBoost model triggered status class CRITICAL (Red) at Camera CAM_21.`, 'critical');
+            writeConsoleLog('POSTGRESQL', `Persisted record ID: ${self.crypto.randomUUID()} directly to 'crowd_alert_records' tables.`, 'success');
+
+            // Play Alert tone
+            startSoundAlarm();
+        }
+
+        function deactivateCriticalState() {
+            alertModal.classList.remove('active');
+            alertModal.setAttribute('aria-hidden', 'true');
+            hotspotCircle.style.display = 'none';
+            stopSoundAlarm();
+        }
+
+        // Event handler registrations
+        densitySlider.addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            densityVal.innerText = `${v.toFixed(1)} ppl/m²`;
+            evaluateSystemRisk(v, parseInt(occupancySlider.value), parseInt(queueSlider.value));
+        });
+
+        occupancySlider.addEventListener('input', (e) => {
+            const v = parseInt(e.target.value);
+            occupancyVal.innerText = `${v.toFixed(1)}%`;
+            evaluateSystemRisk(parseFloat(densitySlider.value), v, parseInt(queueSlider.value));
+        });
+
+        queueSlider.addEventListener('input', (e) => {
+            const v = parseInt(e.target.value);
+            queueVal.innerText = `${v} Persons`;
+            evaluateSystemRisk(parseFloat(densitySlider.value), parseInt(occupancySlider.value), v);
+        });
+
+        simulateCriticalBtn.addEventListener('click', () => {
+            // Set input metrics values to trigger critical bounds
+            densitySlider.value = 5.6;
+            densityVal.innerText = '5.6 ppl/m²';
+            occupancySlider.value = 110;
+            occupancyVal.innerText = '110.0%';
+            queueSlider.value = 42;
+            queueVal.innerText = '42 Persons';
+
+            evaluateSystemRisk(5.6, 110, 42);
+        });
+
+        acknowledgeBtn.addEventListener('click', () => {
+            writeConsoleLog('OPERATOR', 'Operator acknowledged alert status ref: CR-1782. Evacuation paths active.', 'success');
+            writeConsoleLog('DISPATCH', 'API trigger: Digital signage displays redirected to Exit 4 routing lanes.', 'success');
+
+            // Return sliders and risk profile indicators back to normal
+            densitySlider.value = 1.5;
+            densityVal.innerText = '1.5 ppl/m²';
+            occupancySlider.value = 40;
+            occupancyVal.innerText = '40.0%';
+            queueSlider.value = 5;
+            queueVal.innerText = '5 Persons';
+
+            evaluateSystemRisk(1.5, 40, 5);
+        });
+    </script>
+</body>
+
+</html>

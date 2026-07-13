@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXORA Reporting Center - Crowd Intelligence Reports</title>
+    <meta name="description"
+        content="NEXORA Reporting Center: Generate Daily, Weekly, Monthly, and Incident Reports with PDF/Excel export and interactive analytics charts.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+
+    <style>
+        /* ================================================================
+           1. DESIGN SYSTEM TOKENS
+           ================================================================ */
+        :root {
+            --bg-primary: #05070f;
+            --bg-secondary: #0b0f1e;
+            --bg-tertiary: #12182c;
+            --bg-card: rgba(11, 15, 30, 0.85);
+            --border: #1e294b;
+            --accent-cyan: #00e5ff;
+            --accent-blue: #0066ff;
+            --status-green: #00e5a3;
+            --status-yellow: #ffb300;
+            --status-orange: #ff6d00;
+            --status-red: #ff2a54;
+            --text-primary: #e2e8f0;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+            --glow-cyan: 0 0 10px rgba(0, 229, 255, 0.25);
+            --radius: 12px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        /* ================================================================
+           2. SIDEBAR
+           ================================================================ */
+        .sidebar {
+            width: 260px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            gap: 24px;
+        }
+
+        .logo-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 22px;
+            height: 22px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            border-radius: 6px;
+            box-shadow: var(--glow-cyan);
+        }
+
+        .logo-text {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 800;
+            font-size: 1.2rem;
+            letter-spacing: 1px;
+            background: linear-gradient(to right, #fff, var(--accent-cyan));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-label {
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: 700;
+            margin-top: 8px;
+        }
+
+        .nav-links {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .nav-btn {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: all 0.25s;
+            text-align: left;
+        }
+
+        .nav-btn:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .nav-btn.active {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border-left: 3px solid var(--accent-cyan);
+        }
+
+        .nav-btn svg {
+            width: 16px;
+            height: 16px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+        }
+
+        /* ================================================================
+           3. MAIN CONTENT AREA
+           ================================================================ */
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .top-bar {
+            height: 64px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+        }
+
+        .top-bar h2 {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 1.05rem;
+            letter-spacing: 0.5px;
+        }
+
+        .top-bar-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .content-scroll {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 28px 32px;
+        }
+
+        /* ================================================================
+           4. REPORT GENERATION PANEL
+           ================================================================ */
+        .generator-panel {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 28px;
+            margin-bottom: 28px;
+        }
+
+        .gen-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .gen-header h3 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .gen-header .badge {
+            background: rgba(0, 229, 255, 0.08);
+            border: 1px solid var(--accent-cyan);
+            color: var(--accent-cyan);
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .scope-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+
+        .scope-tab {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-primary);
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .scope-tab:hover {
+            border-color: var(--accent-cyan);
+            color: var(--text-primary);
+        }
+
+        .scope-tab.active {
+            background: var(--bg-tertiary);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            box-shadow: var(--glow-cyan);
+        }
+
+        .export-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .export-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+            border: none;
+            transition: all 0.25s;
+        }
+
+        .export-btn svg {
+            width: 16px;
+            height: 16px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+        }
+
+        .btn-pdf {
+            background: var(--status-red);
+            color: white;
+        }
+
+        .btn-pdf:hover {
+            box-shadow: 0 0 16px rgba(255, 42, 84, 0.4);
+        }
+
+        .btn-excel {
+            background: var(--status-green);
+            color: var(--bg-primary);
+        }
+
+        .btn-excel:hover {
+            box-shadow: 0 0 16px rgba(0, 229, 163, 0.4);
+        }
+
+        .btn-generate {
+            background: var(--accent-cyan);
+            color: var(--bg-primary);
+            margin-left: auto;
+        }
+
+        .btn-generate:hover {
+            box-shadow: 0 0 16px rgba(0, 229, 255, 0.5);
+        }
+
+        /* ================================================================
+           5. ANALYTICS SUMMARY CARDS
+           ================================================================ */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        .sum-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            transition: border-color 0.3s;
+        }
+
+        .sum-card:hover {
+            border-color: var(--accent-cyan);
+        }
+
+        .sum-label {
+            font-size: 0.62rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .sum-value {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: var(--accent-cyan);
+            margin: 6px 0 4px 0;
+        }
+
+        .sum-sub {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+        }
+
+        .sum-value.red {
+            color: var(--status-red);
+        }
+
+        .sum-value.green {
+            color: var(--status-green);
+        }
+
+        .sum-value.yellow {
+            color: var(--status-yellow);
+        }
+
+        /* ================================================================
+           6. CHARTS AREA
+           ================================================================ */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        .chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .chart-card-title {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+        }
+
+        .chart-area {
+            width: 100%;
+            min-height: 180px;
+            position: relative;
+        }
+
+        /* ================================================================
+           7. DATA TABLE
+           ================================================================ */
+        .data-table-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            backdrop-filter: blur(10px);
+            overflow: hidden;
+            margin-bottom: 28px;
+        }
+
+        .table-header-bar {
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .table-header-bar h4 {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.78rem;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            color: var(--text-dim);
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 0.65rem;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(30, 41, 75, 0.5);
+            font-weight: 500;
+        }
+
+        tbody tr:hover {
+            background: rgba(0, 229, 255, 0.03);
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .level-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 0.68rem;
+            font-weight: 700;
+        }
+
+        .level-critical {
+            background: rgba(255, 42, 84, 0.12);
+            color: var(--status-red);
+            border: 1px solid var(--status-red);
+        }
+
+        .level-high {
+            background: rgba(255, 109, 0, 0.12);
+            color: var(--status-orange);
+            border: 1px solid var(--status-orange);
+        }
+
+        .level-moderate {
+            background: rgba(255, 179, 0, 0.12);
+            color: var(--status-yellow);
+            border: 1px solid var(--status-yellow);
+        }
+
+        .status-resolved {
+            color: var(--status-green);
+        }
+
+        .status-acknowledged {
+            color: var(--accent-cyan);
+        }
+
+        .status-escalated {
+            color: var(--status-red);
+        }
+
+        /* ================================================================
+           8. GENERATION TOAST
+           ================================================================ */
+        .toast {
+            position: fixed;
+            bottom: 28px;
+            right: 28px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--accent-cyan);
+            border-radius: 10px;
+            padding: 16px 24px;
+            box-shadow: 0 0 20px rgba(0, 229, 255, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            transform: translateY(120%);
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 1000;
+        }
+
+        .toast.show {
+            transform: translateY(0);
+        }
+
+        .toast-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: rgba(0, 229, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent-cyan);
+        }
+
+        /* ================================================================
+           9. LOADING STATE
+           ================================================================ */
+        @keyframes shimmer {
+            0% {
+                background-position: -200% 0;
+            }
+
+            100% {
+                background-position: 200% 0;
+            }
+        }
+
+        .skeleton {
+            background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border) 50%, var(--bg-tertiary) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ================================================================
+         SIDEBAR
+         ================================================================ -->
+    <nav class="sidebar">
+        <div class="logo-row">
+            <div class="logo-icon"></div>
+            <span class="logo-text">NEXORA</span>
+        </div>
+
+        <div>
+            <div class="nav-label">Navigation</div>
+            <div class="nav-links" style="margin-top: 10px;">
+                <a href="react_dashboard.html" class="nav-btn">
+                    <svg viewBox="0 0 24 24">
+                        <rect x="3" y="3" width="7" height="7" rx="1" />
+                        <rect x="14" y="3" width="7" height="7" rx="1" />
+                        <rect x="3" y="14" width="7" height="7" rx="1" />
+                        <rect x="14" y="14" width="7" height="7" rx="1" />
+                    </svg>
+                    Dashboard
+                </a>
+                <a href="crowd_map.html" class="nav-btn">
+                    <svg viewBox="0 0 24 24">
+                        <circle cx="12" cy="10" r="3" />
+                        <path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 10-16 0c0 3 2.7 7 8 11.7z" />
+                    </svg>
+                    Live Monitoring
+                </a>
+                <button class="nav-btn active">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="16" y1="13" x2="8" y2="13" />
+                        <line x1="16" y1="17" x2="8" y2="17" />
+                    </svg>
+                    Reports
+                </button>
+                <a href="alert_console.html" class="nav-btn">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                        <path d="M13.73 21a2 2 0 01-3.46 0" />
+                    </svg>
+                    Alerts
+                </a>
+            </div>
+        </div>
+
+        <div style="margin-top: auto;">
+            <div class="nav-label">System</div>
+            <div
+                style="background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 10px; display: flex; align-items: center; gap: 10px;">
+                <div
+                    style="width: 8px; height: 8px; border-radius: 50%; background: var(--status-green); box-shadow: 0 0 6px var(--status-green);">
+                </div>
+                <div>
+                    <div
+                        style="font-size: 0.6rem; color: var(--text-dim); font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">
+                        Engine Status</div>
+                    <div style="font-size: 0.75rem; font-weight: 600; color: var(--accent-cyan);">REPORT_GEN_ACTIVE
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ================================================================
+         MAIN WORKSPACE
+         ================================================================ -->
+    <div class="main-content">
+        <div class="top-bar">
+            <h2>REPORTING COMMAND CENTER</h2>
+            <div class="top-bar-right">
+                <span>Generated Reports: <strong style="color: var(--accent-cyan);"
+                        id="reportCountDisplay">0</strong></span>
+                <span>|</span>
+                <span id="clockDisplay">—</span>
+            </div>
+        </div>
+
+        <div class="content-scroll" id="scrollArea">
+
+            <!-- REPORT GENERATOR PANEL -->
+            <div class="generator-panel">
+                <div class="gen-header">
+                    <h3>Report Generation Engine</h3>
+                    <span class="badge">AUTO COMPILER v2.1</span>
+                </div>
+
+                <div class="scope-tabs" id="scopeTabs">
+                    <button class="scope-tab active" data-scope="DAILY">Daily Report</button>
+                    <button class="scope-tab" data-scope="WEEKLY">Weekly Report</button>
+                    <button class="scope-tab" data-scope="MONTHLY">Monthly Report</button>
+                    <button class="scope-tab" data-scope="INCIDENT">Incident Report</button>
+                </div>
+
+                <div class="export-row">
+                    <button class="export-btn btn-pdf" id="btnExportPDF" title="Export as PDF">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        Export PDF
+                    </button>
+                    <button class="export-btn btn-excel" id="btnExportExcel" title="Export as Excel CSV">
+                        <svg viewBox="0 0 24 24">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <line x1="3" y1="9" x2="21" y2="9" />
+                            <line x1="3" y1="15" x2="21" y2="15" />
+                            <line x1="9" y1="3" x2="9" y2="21" />
+                        </svg>
+                        Export Excel
+                    </button>
+                    <button class="export-btn btn-generate" id="btnGenerate" title="Generate Report">
+                        <svg viewBox="0 0 24 24">
+                            <polyline points="1 4 1 10 7 10" />
+                            <path d="M3.51 15a9 9 0 105.17-10.87L1 10" />
+                        </svg>
+                        Generate Report
+                    </button>
+                </div>
+            </div>
+
+            <!-- ANALYTICS SUMMARY CARDS -->
+            <div class="summary-grid" id="summaryGrid">
+                <div class="sum-card">
+                    <div class="sum-label">Total Headcount</div>
+                    <div class="sum-value" id="sumHeadcount">—</div>
+                    <div class="sum-sub" id="sumHeadcountSub">Generate a report to view</div>
+                </div>
+                <div class="sum-card">
+                    <div class="sum-label">Peak Occupancy</div>
+                    <div class="sum-value" id="sumOccupancy">—</div>
+                    <div class="sum-sub" id="sumOccupancySub">—</div>
+                </div>
+                <div class="sum-card">
+                    <div class="sum-label">Max Crowd Density</div>
+                    <div class="sum-value" id="sumDensity">—</div>
+                    <div class="sum-sub" id="sumDensitySub">—</div>
+                </div>
+                <div class="sum-card">
+                    <div class="sum-label">Risk Events</div>
+                    <div class="sum-value red" id="sumRisk">—</div>
+                    <div class="sum-sub" id="sumRiskSub">—</div>
+                </div>
+                <div class="sum-card">
+                    <div class="sum-label">Avg Response Time</div>
+                    <div class="sum-value green" id="sumResponse">—</div>
+                    <div class="sum-sub">Incident response</div>
+                </div>
+                <div class="sum-card">
+                    <div class="sum-label">Camera Uptime</div>
+                    <div class="sum-value green" id="sumUptime">—</div>
+                    <div class="sum-sub">Sensor availability</div>
+                </div>
+                <div class="sum-card">
+                    <div class="sum-label">Riskiest Zone</div>
+                    <div class="sum-value red" id="sumRiskZone" style="font-size:0.9rem;">—</div>
+                    <div class="sum-sub">Most incidents</div>
+                </div>
+                <div class="sum-card">
+                    <div class="sum-label">Peak Window</div>
+                    <div class="sum-value yellow" id="sumPeakWindow" style="font-size:0.9rem;">—</div>
+                    <div class="sum-sub">Busiest timeframe</div>
+                </div>
+            </div>
+
+            <!-- CHARTS -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-card-title">Daily Headcount Trend</div>
+                    <div class="chart-area" id="headcountChart">
+                        <div
+                            style="height:180px; display:flex; align-items:center; justify-content:center; color: var(--text-dim); font-size:0.8rem;">
+                            Generate a report to render charts</div>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card-title">Incident Severity Breakdown</div>
+                    <div class="chart-area" id="pieChart">
+                        <div
+                            style="height:180px; display:flex; align-items:center; justify-content:center; color: var(--text-dim); font-size:0.8rem;">
+                            Awaiting data</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="charts-grid" style="grid-template-columns: 1fr 1fr;">
+                <div class="chart-card">
+                    <div class="chart-card-title">Peak Density Trend (ppl/m²)</div>
+                    <div class="chart-area" id="densityChart">
+                        <div
+                            style="height:160px; display:flex; align-items:center; justify-content:center; color: var(--text-dim); font-size:0.8rem;">
+                            Awaiting data</div>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card-title">Occupancy Rate Trend (%)</div>
+                    <div class="chart-area" id="occupancyChart">
+                        <div
+                            style="height:160px; display:flex; align-items:center; justify-content:center; color: var(--text-dim); font-size:0.8rem;">
+                            Awaiting data</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TELEMETRY DATA TABLE -->
+            <div class="data-table-card">
+                <div class="table-header-bar">
+                    <h4>Telemetry Data Series</h4>
+                    <span style="font-size:0.72rem; color: var(--text-dim);" id="telemetryCount">0 records</span>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Headcount</th>
+                                <th>Peak Occ. %</th>
+                                <th>Max Density</th>
+                                <th>Avg Flow</th>
+                                <th>Avg Queue</th>
+                                <th>Risk Events</th>
+                            </tr>
+                        </thead>
+                        <tbody id="telemetryBody">
+                            <tr>
+                                <td colspan="7" style="text-align:center; padding:32px; color:var(--text-dim);">Generate
+                                    a report to populate data</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- INCIDENT AUDIT TABLE -->
+            <div class="data-table-card">
+                <div class="table-header-bar">
+                    <h4>Incident Audit Ledger</h4>
+                    <span style="font-size:0.72rem; color: var(--text-dim);" id="incidentCount">0 incidents</span>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Incident ID</th>
+                                <th>Timestamp</th>
+                                <th>Camera</th>
+                                <th>Zone</th>
+                                <th>Risk Level</th>
+                                <th>Density</th>
+                                <th>AI Conf.</th>
+                                <th>Response</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="incidentBody">
+                            <tr>
+                                <td colspan="9" style="text-align:center; padding:32px; color:var(--text-dim);">No
+                                    incidents logged</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div class="toast" id="toast">
+        <div class="toast-icon">✓</div>
+        <div>
+            <div style="font-weight:700;" id="toastTitle">Report Generated</div>
+            <div style="font-size:0.72rem; color:var(--text-muted);" id="toastSub">—</div>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         JAVASCRIPT ENGINE
+         ================================================================ -->
+    <script>
+        // ============================================================
+        // 1. SEED DATA GENERATORS (SIMULATING BACKEND RESPONSES)
+        // ============================================================
+        const ZONES = [
+            "Main Entrance Gateway", "South Side Escalators",
+            "North Corridor Linkway", "Evacuation Tunnel 4",
+            "Central Concourse", "Platform Level B"
+        ];
+        const CAMERAS = ["CAM-01", "CAM-02", "CAM-03", "CAM-04", "CAM-05"];
+        const RISK_LEVELS = ["CRITICAL (RED)", "HIGH (ORANGE)", "MODERATE (YELLOW)"];
+        const STATUSES = ["Acknowledged", "Resolved", "Escalated"];
+        const DESCRIPTIONS = [
+            "Abnormal density surge detected near bottleneck corridor.",
+            "Queue congestion exceeding safe threshold at entry gate.",
+            "Crowd flow reversal detected triggering counter-flow alert.",
+            "Sudden occupancy spike during scheduled event ingress.",
+            "Pedestrian speed anomaly indicating potential stampede risk.",
+            "Restricted zone intrusion detected by perimeter sensors."
+        ];
+
+        function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+        function randFloat(min, max, dec = 2) { return parseFloat((Math.random() * (max - min) + min).toFixed(dec)); }
+        function randChoice(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+        function genId() { return 'REP-' + Math.random().toString(36).substr(2, 8).toUpperCase(); }
+
+        function generateTelemetry(numDays) {
+            const now = new Date();
+            const series = [];
+            for (let d = 0; d < numDays; d++) {
+                const day = new Date(now);
+                day.setDate(day.getDate() - d);
+                const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                series.push({
+                    date: day.toISOString().split('T')[0],
+                    headcount: randInt(1800, 4200) * (isWeekend ? 0.65 : 1),
+                    peakOccupancy: randFloat(55, 98, 1),
+                    maxDensity: randFloat(2.5, 7.5),
+                    avgFlow: randFloat(1.0, 2.0),
+                    avgQueue: randInt(4, 22),
+                    riskEvents: randInt(0, 5)
+                });
+            }
+            return series;
+        }
+
+        function generateIncidents(numDays) {
+            const now = new Date();
+            const count = Math.max(2, Math.floor(numDays / 2));
+            const incidents = [];
+            for (let i = 0; i < count; i++) {
+                const ts = new Date(now - randInt(1, numDays * 24) * 3600000);
+                incidents.push({
+                    id: `INC-${8800 + i + randInt(1, 99)}`,
+                    timestamp: ts.toISOString().replace('T', ' ').substring(0, 19),
+                    camera: randChoice(CAMERAS),
+                    zone: randChoice(ZONES),
+                    riskLevel: randChoice(RISK_LEVELS),
+                    peakDensity: randFloat(3.5, 8.0, 1),
+                    aiConfidence: randFloat(78, 98, 1),
+                    responseTime: randInt(15, 180),
+                    status: randChoice(STATUSES),
+                    description: randChoice(DESCRIPTIONS)
+                });
+            }
+            incidents.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+            return incidents;
+        }
+
+        function buildSummary(telemetry, incidents) {
+            const totalHead = telemetry.reduce((s, t) => s + t.headcount, 0);
+            const crit = incidents.filter(i => i.riskLevel.includes("CRITICAL")).length;
+            const high = incidents.filter(i => i.riskLevel.includes("HIGH")).length;
+            const avgResp = incidents.length ? Math.round(incidents.reduce((s, i) => s + i.responseTime, 0) / incidents.length) : 0;
+            const busiest = telemetry.reduce((a, b) => a.headcount > b.headcount ? a : b, telemetry[0]);
+
+            return {
+                totalHeadcount: Math.round(totalHead),
+                avgDailyHeadcount: Math.round(totalHead / telemetry.length),
+                peakOccupancy: Math.max(...telemetry.map(t => t.peakOccupancy)),
+                maxDensity: Math.max(...telemetry.map(t => t.maxDensity)),
+                avgDensity: parseFloat((telemetry.reduce((s, t) => s + t.maxDensity, 0) / telemetry.length).toFixed(2)),
+                totalRiskEvents: telemetry.reduce((s, t) => s + t.riskEvents, 0),
+                criticalIncidents: crit,
+                highIncidents: high,
+                avgResponseTime: avgResp,
+                cameraUptime: 99.7,
+                busiestDay: busiest ? busiest.date : '—',
+                peakWindow: `${randInt(8, 10)}:00 – ${randInt(10, 12)}:00`,
+                riskiestZone: "South Side Escalators",
+                safestZone: "North Corridor Linkway"
+            };
+        }
+
+        // ============================================================
+        // 2. SVG CHART RENDERERS
+        // ============================================================
+        function renderBarChart(container, data, color = '#00e5ff') {
+            const W = 700, H = 200;
+            const maxVal = Math.max(...data.map(d => d.value)) * 1.1 || 1;
+            const n = data.length;
+            const barW = Math.max(6, Math.min(36, (W - 80) / n - 3));
+
+            let bars = '', labels = '', gridLines = '';
+            for (let step = 0; step <= 4; step++) {
+                const val = Math.round(maxVal * step / 4);
+                const y = (H - 30) - ((H - 50) * step / 4);
+                gridLines += `<line x1="45" y1="${y}" x2="${W - 5}" y2="${y}" stroke="#1e294b" stroke-width="0.5"/>`;
+                gridLines += `<text x="40" y="${y + 4}" text-anchor="end" fill="#64748b" font-size="9" font-family="Inter">${val.toLocaleString()}</text>`;
+            }
+
+            data.forEach((d, i) => {
+                const barH = (d.value / maxVal) * (H - 50);
+                const x = 50 + i * (barW + 3);
+                const y = (H - 30) - barH;
+                bars += `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" fill="${color}" opacity="0.8" rx="2"><title>${d.label}: ${Math.round(d.value).toLocaleString()}</title></rect>`;
+                if (i % Math.max(1, Math.floor(n / 10)) === 0)
+                    labels += `<text x="${x + barW / 2}" y="${H - 12}" text-anchor="middle" fill="#64748b" font-size="8" font-family="Inter">${d.label}</text>`;
+            });
+
+            container.innerHTML = `<svg width="100%" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${gridLines}${bars}${labels}</svg>`;
+        }
+
+        function renderLineChart(container, data, color = '#ff2a54') {
+            const W = 600, H = 170;
+            const maxVal = Math.max(...data.map(d => d.value)) * 1.2 || 1;
+            const n = data.length;
+            const stepX = (W - 70) / Math.max(1, n - 1);
+
+            let points = [], pathD = '', areaD = '', dots = '', labels = '';
+            data.forEach((d, i) => {
+                const x = 50 + i * stepX;
+                const y = (H - 30) - (d.value / maxVal) * (H - 50);
+                points.push({ x, y });
+                pathD += `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)},${y.toFixed(1)} `;
+                dots += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="${color}"><title>${d.label}: ${d.value}</title></circle>`;
+                if (i % Math.max(1, Math.floor(n / 8)) === 0)
+                    labels += `<text x="${x.toFixed(1)}" y="${H - 10}" text-anchor="middle" fill="#64748b" font-size="8" font-family="Inter">${d.label}</text>`;
+            });
+
+            if (points.length > 0) {
+                areaD = pathD + ` L ${points[points.length - 1].x.toFixed(1)},${H - 30} L ${points[0].x.toFixed(1)},${H - 30} Z`;
+            }
+
+            container.innerHTML = `<svg width="100%" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+                <defs><linearGradient id="aFill_${color.replace('#', '')}" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="${color}" stop-opacity="0.2"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+                <path d="${areaD}" fill="url(#aFill_${color.replace('#', '')})"/>
+                <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round"/>
+                ${dots}${labels}</svg>`;
+        }
+
+        function renderPieChart(container, slices) {
+            const size = 200, cx = 100, cy = 90, R = 65, rInner = 36;
+            const total = slices.reduce((s, sl) => s + sl.value, 0) || 1;
+            let startAngle = -90, paths = '', legend = '';
+
+            slices.forEach((sl, i) => {
+                if (sl.value <= 0) return;
+                const pct = sl.value / total;
+                const endAngle = startAngle + pct * 360;
+                const large = pct > 0.5 ? 1 : 0;
+                const rad = Math.PI / 180;
+
+                const x1 = cx + R * Math.cos(startAngle * rad);
+                const y1 = cy + R * Math.sin(startAngle * rad);
+                const x2 = cx + R * Math.cos(endAngle * rad);
+                const y2 = cy + R * Math.sin(endAngle * rad);
+                const x3 = cx + rInner * Math.cos(endAngle * rad);
+                const y3 = cy + rInner * Math.sin(endAngle * rad);
+                const x4 = cx + rInner * Math.cos(startAngle * rad);
+                const y4 = cy + rInner * Math.sin(startAngle * rad);
+
+                paths += `<path d="M ${x1.toFixed(1)},${y1.toFixed(1)} A ${R},${R} 0 ${large},1 ${x2.toFixed(1)},${y2.toFixed(1)} L ${x3.toFixed(1)},${y3.toFixed(1)} A ${rInner},${rInner} 0 ${large},0 ${x4.toFixed(1)},${y4.toFixed(1)} Z" fill="${sl.color}" opacity="0.85"/>`;
+
+                const ly = size - 10 + i * 20;
+                legend += `<rect x="10" y="${ly}" width="10" height="10" rx="2" fill="${sl.color}"/>`;
+                legend += `<text x="26" y="${ly + 9}" fill="#94a3b8" font-size="11" font-family="Inter">${sl.label}: ${sl.value} (${(pct * 100).toFixed(0)}%)</text>`;
+                startAngle = endAngle;
+            });
+
+            const totalH = size + slices.length * 20;
+            const centerText = `<text x="${cx}" y="${cy + 5}" text-anchor="middle" fill="#e2e8f0" font-size="18" font-weight="bold" font-family="Outfit">${total}</text>`;
+            container.innerHTML = `<svg width="100%" viewBox="0 0 ${size} ${totalH}" xmlns="http://www.w3.org/2000/svg">${paths}${centerText}${legend}</svg>`;
+        }
+
+        // ============================================================
+        // 3. CSV/PDF EXPORT FUNCTIONS
+        // ============================================================
+        const REPORT_API_BASE = 'http://127.0.0.1:8000';
+
+        function normalizeReportPayload(apiReport) {
+            return {
+                id: apiReport.report_id,
+                scope: apiReport.scope,
+                generatedAt: apiReport.generated_at,
+                telemetry: (apiReport.telemetry || []).map(t => ({
+                    date: t.date,
+                    headcount: t.headcount,
+                    peakOccupancy: t.peak_occupancy_pct,
+                    maxDensity: t.max_density_sqm,
+                    avgFlow: t.avg_flow_rate,
+                    avgQueue: t.avg_queue_length,
+                    riskEvents: t.risk_events,
+                })),
+                incidents: (apiReport.incidents || []).map(inc => ({
+                    id: inc.incident_id,
+                    timestamp: inc.timestamp,
+                    camera: inc.camera_id,
+                    zone: inc.zone,
+                    riskLevel: inc.risk_level,
+                    peakDensity: inc.peak_density,
+                    aiConfidence: inc.ai_confidence,
+                    responseTime: inc.response_time_sec,
+                    status: inc.status,
+                })),
+                summary: {
+                    totalHeadcount: apiReport.summary.total_headcount,
+                    avgDailyHeadcount: apiReport.summary.avg_daily_headcount,
+                    peakOccupancy: apiReport.summary.peak_occupancy_pct,
+                    maxDensity: apiReport.summary.max_density_sqm,
+                    totalRiskEvents: apiReport.summary.total_risk_events,
+                    avgResponseTime: apiReport.summary.avg_response_time_sec,
+                    cameraUptime: apiReport.summary.camera_uptime_pct,
+                    riskiestZone: apiReport.summary.riskiest_zone,
+                    peakWindow: apiReport.summary.busiest_hour,
+                    criticalIncidents: apiReport.summary.critical_incidents,
+                    highIncidents: apiReport.summary.high_incidents,
+                },
+                exports: apiReport.exports || null,
+            };
+        }
+
+        function downloadByUrl(url, filename) {
+            const link = document.createElement('a');
+            link.href = url;
+            if (filename) link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function exportCSV(report) {
+            if (report.exports?.csv) {
+                downloadByUrl(`${REPORT_API_BASE}${report.exports.csv}`, report.exports.csv_filename || 'report.csv');
+                return;
+            }
+
+            let csv = '';
+            csv += 'NEXORA CROWD INTELLIGENCE REPORT\n';
+            csv += `Report ID,${report.id}\n`;
+            csv += `Scope,${report.scope}\n`;
+            csv += `Generated,${report.generatedAt}\n\n`;
+
+            csv += 'ANALYTICS SUMMARY\n';
+            const s = report.summary;
+            csv += `Total Headcount,${s.totalHeadcount}\n`;
+            csv += `Avg Daily Headcount,${s.avgDailyHeadcount}\n`;
+            csv += `Peak Occupancy %,${s.peakOccupancy}\n`;
+            csv += `Max Density ppl/m²,${s.maxDensity}\n`;
+            csv += `Total Risk Events,${s.totalRiskEvents}\n`;
+            csv += `Avg Response Time sec,${s.avgResponseTime}\n\n`;
+
+            csv += 'TELEMETRY SERIES\n';
+            csv += 'Date,Headcount,Peak Occupancy %,Max Density,Avg Flow,Avg Queue,Risk Events\n';
+            report.telemetry.forEach(t => {
+                csv += `${t.date},${Math.round(t.headcount)},${t.peakOccupancy},${t.maxDensity},${t.avgFlow},${t.avgQueue},${t.riskEvents}\n`;
+            });
+            csv += '\n';
+
+            csv += 'INCIDENTS\n';
+            csv += 'ID,Timestamp,Camera,Zone,Risk Level,Peak Density,AI Conf %,Response sec,Status\n';
+            report.incidents.forEach(inc => {
+                csv += `${inc.id},${inc.timestamp},${inc.camera},${inc.zone},${inc.riskLevel},${inc.peakDensity},${inc.aiConfidence},${inc.responseTime},${inc.status}\n`;
+            });
+
+            downloadFile(csv, `nexora_${report.scope.toLowerCase()}_${report.id}.csv`, 'text/csv');
+        }
+
+        function exportPDF(report) {
+            if (report.exports?.pdf) {
+                downloadByUrl(`${REPORT_API_BASE}${report.exports.pdf}`, report.exports.pdf_filename || 'report.html');
+                return;
+            }
+
+            const s = report.summary;
+            let telRows = report.telemetry.map(t =>
+                `<tr><td>${t.date}</td><td>${Math.round(t.headcount).toLocaleString()}</td><td>${t.peakOccupancy}%</td><td>${t.maxDensity}</td><td>${t.avgFlow} m/s</td><td>${t.avgQueue}</td><td>${t.riskEvents}</td></tr>`
+            ).join('');
+            let incRows = report.incidents.map(inc => {
+                const cls = inc.riskLevel.includes('CRITICAL') ? 'critical' : (inc.riskLevel.includes('HIGH') ? 'high' : 'moderate');
+                return `<tr><td>${inc.id}</td><td>${inc.timestamp}</td><td>${inc.camera}</td><td>${inc.zone}</td><td class="${cls}">${inc.riskLevel}</td><td>${inc.peakDensity}</td><td>${inc.aiConfidence}%</td><td>${inc.responseTime}s</td><td>${inc.status}</td></tr>`;
+            }).join('');
+
+            const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>NEXORA Report ${report.id}</title>
+<style>
+body{font-family:Helvetica,Arial,sans-serif;color:#1e293b;padding:40px;line-height:1.5}
+h1{font-size:24px;border-bottom:3px solid #00e5ff;padding-bottom:12px;margin-bottom:20px}
+.meta{font-size:11px;color:#64748b;margin-bottom:30px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:30px}
+.stat{border:1px solid #e2e8f0;border-radius:8px;padding:14px}
+.stat-l{font-size:9px;color:#64748b;text-transform:uppercase;font-weight:bold}
+.stat-v{font-size:20px;font-weight:bold;color:#0066ff;margin:4px 0}
+h2{font-size:14px;border-bottom:1px solid #cbd5e1;padding-bottom:6px;margin:25px 0 12px}
+table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:20px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #e2e8f0}
+th{background:#f1f5f9;font-weight:bold;color:#334155;text-transform:uppercase;font-size:9px}
+.critical{color:#ff2a54;font-weight:bold}.high{color:#ff6d00;font-weight:bold}.moderate{color:#ffb300;font-weight:bold}
+.footer{margin-top:30px;text-align:center;font-size:10px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:15px}
+</style></head><body>
+<h1>NEXORA CROWD INTELLIGENCE REPORT</h1>
+<div class="meta"><strong>Report ID:</strong> ${report.id} | <strong>Scope:</strong> ${report.scope} | <strong>Generated:</strong> ${report.generatedAt}</div>
+<h2>Analytics Summary</h2>
+<div class="stats">
+<div class="stat"><div class="stat-l">Total Headcount</div><div class="stat-v">${s.totalHeadcount.toLocaleString()}</div></div>
+<div class="stat"><div class="stat-l">Peak Occupancy</div><div class="stat-v">${s.peakOccupancy}%</div></div>
+<div class="stat"><div class="stat-l">Max Density</div><div class="stat-v">${s.maxDensity} ppl/m²</div></div>
+<div class="stat"><div class="stat-l">Risk Events</div><div class="stat-v">${s.totalRiskEvents}</div></div>
+</div>
+<h2>Telemetry Data</h2>
+<table><thead><tr><th>Date</th><th>Headcount</th><th>Occ. %</th><th>Density</th><th>Flow</th><th>Queue</th><th>Risk</th></tr></thead><tbody>${telRows}</tbody></table>
+<h2>Incidents</h2>
+<table><thead><tr><th>ID</th><th>Timestamp</th><th>Camera</th><th>Zone</th><th>Risk</th><th>Density</th><th>Conf.</th><th>Response</th><th>Status</th></tr></thead><tbody>${incRows}</tbody></table>
+<div class="footer">NEXORA Predictive Crowd Intelligence Platform &bull; Auto-generated report &bull; INTERNAL USE ONLY</div>
+</body></html>`;
+
+            downloadFile(html, `nexora_${report.scope.toLowerCase()}_${report.id}.html`, 'text/html');
+        }
+
+        function downloadFile(content, filename, mimeType) {
+            const blob = new Blob([content], { type: mimeType + ';charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // ============================================================
+        // 4. STATE & UI CONTROLLER
+        // ============================================================
+        let currentScope = 'DAILY';
+        let currentReport = null;
+        let reportCount = 0;
+
+        const SCOPE_DAYS = { DAILY: 1, WEEKLY: 7, MONTHLY: 30, INCIDENT: 30 };
+
+        // Scope tabs
+        document.getElementById('scopeTabs').addEventListener('click', (e) => {
+            const tab = e.target.closest('.scope-tab');
+            if (!tab) return;
+            document.querySelectorAll('.scope-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            currentScope = tab.dataset.scope;
+        });
+
+        // Generate button
+        document.getElementById('btnGenerate').addEventListener('click', () => {
+            generateReport(currentScope);
+        });
+
+        // Export buttons
+        document.getElementById('btnExportPDF').addEventListener('click', () => {
+            if (!currentReport) return showToast('No Report', 'Generate a report first before exporting.');
+            exportPDF(currentReport);
+            showToast('PDF Exported', `${currentReport.scope} report saved as HTML/PDF.`);
+        });
+
+        document.getElementById('btnExportExcel').addEventListener('click', () => {
+            if (!currentReport) return showToast('No Report', 'Generate a report first before exporting.');
+            exportCSV(currentReport);
+            showToast('Excel Exported', `${currentReport.scope} report saved as CSV.`);
+        });
+
+        async function generateReport(scope) {
+            try {
+                const response = await fetch(`${REPORT_API_BASE}/reports/generate`, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ scope })
+                });
+
+                if (!response.ok) throw new Error('Server returned an error');
+                const apiReport = await response.json();
+                currentReport = normalizeReportPayload(apiReport);
+
+                reportCount++;
+                document.getElementById('reportCountDisplay').textContent = reportCount;
+
+                renderSummary(currentReport.summary);
+                renderCharts(currentReport.telemetry, currentReport.incidents, currentReport.summary);
+                renderTelemetryTable(currentReport.telemetry);
+                renderIncidentTable(currentReport.incidents);
+                showToast('Report Generated', `${scope} report ${currentReport.id} compiled from the live reporting service.`);
+                return;
+            } catch (error) {
+                const numDays = SCOPE_DAYS[scope];
+                const telemetry = generateTelemetry(numDays);
+                const incidents = generateIncidents(numDays);
+                const summary = buildSummary(telemetry, incidents);
+
+                currentReport = {
+                    id: genId(),
+                    scope: scope,
+                    generatedAt: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC',
+                    telemetry,
+                    incidents,
+                    summary
+                };
+
+                reportCount++;
+                document.getElementById('reportCountDisplay').textContent = reportCount;
+
+                renderSummary(summary);
+                renderCharts(telemetry, incidents, summary);
+                renderTelemetryTable(telemetry);
+                renderIncidentTable(incidents);
+                showToast('Report Generated', `${scope} report ${currentReport.id} compiled successfully.`);
+            }
+        }
+
+        function renderSummary(s) {
+            document.getElementById('sumHeadcount').textContent = s.totalHeadcount.toLocaleString();
+            document.getElementById('sumHeadcountSub').textContent = `Avg ${s.avgDailyHeadcount.toLocaleString()}/day`;
+            document.getElementById('sumOccupancy').textContent = s.peakOccupancy + '%';
+            document.getElementById('sumOccupancySub').textContent = 'Peak recorded rate';
+            document.getElementById('sumDensity').textContent = s.maxDensity;
+            document.getElementById('sumDensitySub').textContent = 'ppl/m² peak';
+            document.getElementById('sumRisk').textContent = s.totalRiskEvents;
+            document.getElementById('sumRiskSub').textContent = `${s.criticalIncidents} critical`;
+            document.getElementById('sumResponse').textContent = s.avgResponseTime + 's';
+            document.getElementById('sumUptime').textContent = s.cameraUptime + '%';
+            document.getElementById('sumRiskZone').textContent = s.riskiestZone;
+            document.getElementById('sumPeakWindow').textContent = s.peakWindow;
+        }
+
+        function renderCharts(telemetry, incidents, summary) {
+            const reversed = [...telemetry].reverse();
+
+            renderBarChart(
+                document.getElementById('headcountChart'),
+                reversed.map(t => ({ label: t.date.substring(5), value: t.headcount })),
+                '#00e5ff'
+            );
+
+            renderLineChart(
+                document.getElementById('densityChart'),
+                reversed.map(t => ({ label: t.date.substring(5), value: t.maxDensity })),
+                '#ff2a54'
+            );
+
+            renderLineChart(
+                document.getElementById('occupancyChart'),
+                reversed.map(t => ({ label: t.date.substring(5), value: t.peakOccupancy })),
+                '#00e5a3'
+            );
+
+            const moderate = Math.max(0, summary.totalRiskEvents - summary.criticalIncidents - summary.highIncidents);
+            renderPieChart(
+                document.getElementById('pieChart'),
+                [
+                    { label: 'Critical', value: summary.criticalIncidents, color: '#ff2a54' },
+                    { label: 'High', value: summary.highIncidents, color: '#ff6d00' },
+                    { label: 'Moderate', value: moderate, color: '#ffb300' }
+                ]
+            );
+        }
+
+        function renderTelemetryTable(telemetry) {
+            const tbody = document.getElementById('telemetryBody');
+            document.getElementById('telemetryCount').textContent = `${telemetry.length} records`;
+            tbody.innerHTML = telemetry.map(t => `
+                <tr>
+                    <td class="mono">${t.date}</td>
+                    <td>${Math.round(t.headcount).toLocaleString()}</td>
+                    <td>${t.peakOccupancy}%</td>
+                    <td>${t.maxDensity}</td>
+                    <td>${t.avgFlow} m/s</td>
+                    <td>${t.avgQueue}</td>
+                    <td><span class="level-badge level-${t.riskEvents >= 3 ? 'critical' : (t.riskEvents >= 1 ? 'moderate' : 'high')}">${t.riskEvents}</span></td>
+                </tr>`).join('');
+        }
+
+        function renderIncidentTable(incidents) {
+            const tbody = document.getElementById('incidentBody');
+            document.getElementById('incidentCount').textContent = `${incidents.length} incidents`;
+            tbody.innerHTML = incidents.map(inc => {
+                const levelCls = inc.riskLevel.includes('CRITICAL') ? 'critical' : (inc.riskLevel.includes('HIGH') ? 'high' : 'moderate');
+                const statusCls = inc.status.toLowerCase();
+                return `<tr>
+                    <td class="mono">${inc.id}</td>
+                    <td>${inc.timestamp}</td>
+                    <td class="mono">${inc.camera}</td>
+                    <td>${inc.zone}</td>
+                    <td><span class="level-badge level-${levelCls}">${inc.riskLevel}</span></td>
+                    <td>${inc.peakDensity}</td>
+                    <td>${inc.aiConfidence}%</td>
+                    <td>${inc.responseTime}s</td>
+                    <td class="status-${statusCls}">${inc.status}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        // ============================================================
+        // 5. TOAST & CLOCK
+        // ============================================================
+        function showToast(title, sub) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastTitle').textContent = title;
+            document.getElementById('toastSub').textContent = sub;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3500);
+        }
+
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clockDisplay').textContent = now.toLocaleTimeString('en-US', { hour12: false }) + ' UTC';
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // Auto-generate initial daily report on load
+        setTimeout(() => generateReport('DAILY'), 600);
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,1534 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXORA Command Center - Predictive Crowd Intelligence Dashboard</title>
+    <!-- SEO Meta Tags -->
+    <meta name="description"
+        content="NEXORA React Command Center Dashboard. Real-time crowd counts, predictive analytics, postgis camera integrations, and SHAP explainability.">
+
+    <!-- Tailwind CSS for utility grids -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        bgPrimary: '#05070f',
+                        bgSecondary: '#0b0f1e',
+                        bgTertiary: '#12182c',
+                        borderBlue: '#1e294b',
+                        accentCyan: '#00e5ff',
+                        accentBlue: '#0066ff',
+                        statusGreen: '#00e5a3',
+                        statusYellow: '#ffb300',
+                        statusOrange: '#ff6d00',
+                        statusRed: '#ff2a54',
+                        textPrimary: '#e2e8f0',
+                        textMuted: '#94a3b8',
+                    },
+                    fontFamily: {
+                        outfit: ['Outfit', 'sans-serif'],
+                        inter: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+
+    <!-- React & Babel Standalone CDNs -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Lucide Icons for aesthetic dashboards -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body {
+            background-color: #05070f;
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Custom scrollbar for command center */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #05070f;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #1e294b;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00e5ff;
+        }
+
+        .glass-card {
+            background: rgba(11, 15, 30, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid #1e294b;
+        }
+
+        @keyframes pulse-red {
+
+            0%,
+            100% {
+                box-shadow: 0 0 10px rgba(255, 42, 84, 0.2);
+            }
+
+            50% {
+                box-shadow: 0 0 25px rgba(255, 42, 84, 0.6);
+                border-color: #ff2a54;
+            }
+        }
+
+        .critical-alert-animation {
+            animation: pulse-red 2s infinite ease-in-out;
+        }
+
+        /* Grid background pattern for map area */
+        .map-bg-grid {
+            background-color: #030509;
+            background-image:
+                linear-gradient(rgba(30, 41, 75, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(30, 41, 75, 0.1) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+    </style>
+</head>
+
+<body class="overflow-hidden">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // =====================================================================
+        // MOCK DATABASE & SEED DATA
+        // =====================================================================
+        const initialCameras = [
+            { id: "CAM-01", name: "Main Entrance Gateway", zone: "Zone A", lat: 37.7749, lng: -122.4194, status: "ACTIVE", ip: "rtsp://10.0.1.50/stream1" },
+            { id: "CAM-02", name: "South Side Escalators", zone: "Zone B", lat: 37.7752, lng: -122.4190, status: "ACTIVE", ip: "rtsp://10.0.1.51/stream1" },
+            { id: "CAM-03", name: "North Corridor LinkWAY", zone: "Lower Level", lat: 37.7745, lng: -122.4198, status: "ACTIVE", ip: "rtsp://10.0.1.52/stream1" },
+            { id: "CAM-04", name: "Evacuation Tunnel 4", zone: "Emergency Zone", lat: 37.7741, lng: -122.4185, status: "INACTIVE", ip: "rtsp://10.0.2.20/stream2" }
+        ];
+
+        const initialAlerts = [
+            { id: "AL-1910", camera: "CAM-02", zone: "South Side Escalators", level: "RED", message: "Critical crowd pressure anomaly detected near entrance gates.", confidence: 96.2, time: "Just Now", acknowledged: false },
+            { id: "AL-1906", camera: "CAM-01", zone: "Main Entrance Gateway", level: "YELLOW", message: "Moderate occupancy surge detected during incoming train arrival.", confidence: 84.5, time: "18 mins ago", acknowledged: true }
+        ];
+
+        const API_BASE = 'http://localhost:8001';
+        const AUTH_STORAGE_KEYS = {
+            accessToken: 'nexora.accessToken',
+            refreshToken: 'nexora.refreshToken'
+        };
+
+        const defaultSocketUrl = (() => {
+            if (typeof window === 'undefined' || !window.location) return 'ws://localhost:8001/ws/map';
+            const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+            const host = window.location.hostname || 'localhost';
+            return `${protocol}://${host}:8001/ws/map`;
+        })();
+
+        function readStoredAuth() {
+            if (typeof window === 'undefined' || !window.sessionStorage) return null;
+            const accessToken = window.sessionStorage.getItem(AUTH_STORAGE_KEYS.accessToken);
+            const refreshToken = window.sessionStorage.getItem(AUTH_STORAGE_KEYS.refreshToken);
+            if (!accessToken) return null;
+            return { accessToken, refreshToken };
+        }
+
+        function writeStoredAuth(accessToken, refreshToken) {
+            if (typeof window === 'undefined' || !window.sessionStorage) return;
+            window.sessionStorage.setItem(AUTH_STORAGE_KEYS.accessToken, accessToken);
+            if (refreshToken) {
+                window.sessionStorage.setItem(AUTH_STORAGE_KEYS.refreshToken, refreshToken);
+            }
+        }
+
+        function clearStoredAuth() {
+            if (typeof window === 'undefined' || !window.sessionStorage) return;
+            window.sessionStorage.removeItem(AUTH_STORAGE_KEYS.accessToken);
+            window.sessionStorage.removeItem(AUTH_STORAGE_KEYS.refreshToken);
+        }
+
+        function parseJwtPayload(token) {
+            if (!token) return null;
+            try {
+                const payload = token.split('.')[1];
+                return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function isTokenExpired(token) {
+            const payload = parseJwtPayload(token);
+            if (!payload || !payload.exp) return false;
+            return Date.now() >= payload.exp * 1000;
+        }
+
+        async function requestJson(url, options = {}) {
+            const response = await fetch(url, options);
+            const contentType = response.headers.get('content-type') || '';
+            const payload = contentType.includes('application/json')
+                ? await response.json()
+                : await response.text();
+
+            if (!response.ok) {
+                throw new Error(typeof payload === 'string' ? payload : (payload?.detail || 'Request failed'));
+            }
+
+            return payload;
+        }
+
+        async function loginToNexora(username, password) {
+            const params = new URLSearchParams({ username_email: username, password_raw: password });
+            const response = await requestJson(`${API_BASE}/auth/login?${params.toString()}`, { method: 'POST' });
+            return {
+                accessToken: response.access_token,
+                refreshToken: response.refresh_token,
+            };
+        }
+
+        async function refreshNexoraToken(refreshToken) {
+            const response = await requestJson(`${API_BASE}/auth/token/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken })
+            });
+            return {
+                accessToken: response.access_token,
+                refreshToken: response.refresh_token,
+            };
+        }
+
+        function useReconnectingWebSocket(url, { onMessage, onAuthError, enabled = true } = {}) {
+            const socketRef = useRef(null);
+            const retryTimeoutRef = useRef(null);
+            const retryCountRef = useRef(0);
+            const onMessageRef = useRef(onMessage);
+            const onAuthErrorRef = useRef(onAuthError);
+            const [status, setStatus] = useState('Connecting');
+            const [lastMessage, setLastMessage] = useState(null);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                onMessageRef.current = onMessage;
+                onAuthErrorRef.current = onAuthError;
+            }, [onMessage, onAuthError]);
+
+            const connect = React.useCallback(() => {
+                if (!enabled || !url) {
+                    setStatus('Offline');
+                    return;
+                }
+
+                if (socketRef.current) {
+                    socketRef.current.close();
+                    socketRef.current = null;
+                }
+
+                setStatus('Connecting');
+                setError(null);
+                console.log(`[WS] Connecting to ${url}`);
+
+                const socket = new WebSocket(url);
+                socketRef.current = socket;
+
+                socket.onopen = () => {
+                    retryCountRef.current = 0;
+                    setStatus('Connected');
+                    setError(null);
+                    console.log('[WS] Connected');
+                };
+
+                socket.onmessage = (event) => {
+                    try {
+                        const payload = JSON.parse(event.data);
+                        if (payload?.type === 'auth_error' && typeof onAuthErrorRef.current === 'function') {
+                            onAuthErrorRef.current(payload);
+                        }
+                        setLastMessage(payload);
+                        if (typeof onMessageRef.current === 'function') {
+                            onMessageRef.current(payload);
+                        }
+                    } catch (parseError) {
+                        console.warn('[WS] Unable to parse payload', parseError);
+                    }
+                };
+
+                socket.onerror = (event) => {
+                    console.warn('[WS] Connection error', event);
+                    setError('Connection error');
+                    if (socketRef.current === socket) {
+                        setStatus('Reconnecting');
+                    }
+                };
+
+                socket.onclose = (event) => {
+                    console.log(`[WS] Closed (code=${event.code})`);
+                    if (socketRef.current !== socket) {
+                        return;
+                    }
+
+                    socketRef.current = null;
+                    if (!enabled) {
+                        return;
+                    }
+
+                    if (retryCountRef.current < 5) {
+                        const delaySeconds = Math.min(30, 2 ** retryCountRef.current);
+                        retryCountRef.current += 1;
+                        setStatus('Reconnecting');
+                        console.warn(`[WS] Reconnecting in ${delaySeconds}s (attempt ${retryCountRef.current})`);
+                        if (retryTimeoutRef.current) {
+                            clearTimeout(retryTimeoutRef.current);
+                        }
+                        retryTimeoutRef.current = setTimeout(() => {
+                            connect();
+                        }, delaySeconds * 1000);
+                    } else {
+                        setStatus('Offline');
+                        setError('Max reconnect attempts reached');
+                    }
+                };
+            }, [enabled, url]);
+
+            useEffect(() => {
+                connect();
+
+                return () => {
+                    if (retryTimeoutRef.current) {
+                        clearTimeout(retryTimeoutRef.current);
+                    }
+                    if (socketRef.current) {
+                        socketRef.current.close();
+                        socketRef.current = null;
+                    }
+                };
+            }, [connect]);
+
+            return { status, lastMessage, error };
+        }
+
+        // =====================================================================
+        // 1. REUSABLE SUB-COMPONENTS
+        // =====================================================================
+
+        // Stat Card Component
+        function StatCard({ title, value, change, changeType, icon }) {
+            const isPositive = changeType === 'positive';
+            return (
+                <div class="glass-card rounded-xl p-5 flex items-center justify-between">
+                    <div>
+                        <p class="text-textMuted text-xs font-semibold tracking-wider uppercase mb-1">{title}</p>
+                        <h3 class="font-outfit font-extrabold text-2xl text-textPrimary">{value}</h3>
+                        <span class={`text-xs font-semibold flex items-center mt-2 ${isPositive ? 'text-statusGreen' : 'text-statusRed'}`}>
+                            {change} from normal
+                        </span>
+                    </div>
+                    <div class="w-12 h-12 bg-bgTertiary border border-borderBlue rounded-xl flex items-center justify-center text-accentCyan">
+                        <i data-lucide={icon} class="w-6 h-6"></i>
+                    </div>
+                </div>
+            );
+        }
+
+        // Live Risk Meter Gauges
+        function RiskMeter({ value }) {
+            // value: GREEN, YELLOW, ORANGE, RED
+            const levels = {
+                GREEN: { label: "SAFE", color: "text-statusGreen", bg: "bg-statusGreen", desc: "Standard flow rate boundaries." },
+                YELLOW: { label: "MODERATE", color: "text-statusYellow", bg: "bg-statusYellow", desc: "Density elevated. Under surveillance." },
+                ORANGE: { label: "HIGH", color: "text-statusOrange", bg: "bg-statusOrange", desc: "Pedestrian bottleneck forming." },
+                RED: { label: "CRITICAL", color: "text-statusRed", bg: "bg-statusRed", desc: "Emergency redirection protocols active." }
+            };
+
+            const selected = levels[value] || levels.GREEN;
+
+            return (
+                <div class="glass-card rounded-xl p-5 flex flex-col items-center justify-center text-center">
+                    <h4 class="text-textMuted text-xs font-semibold mb-3 tracking-wider uppercase">Active Risk Level</h4>
+                    <div class="h-24 w-24 rounded-full border-4 border-dashed border-borderBlue flex flex-col items-center justify-center mb-3">
+                        <span class={`font-outfit font-black text-lg ${selected.color}`}>{selected.label}</span>
+                    </div>
+                    <p class="text-xs text-textMuted max-w-[200px]">{selected.desc}</p>
+                </div>
+            );
+        }
+
+        // AI Confidence Radial Gauge
+        function ConfidenceGauge({ percentage }) {
+            // Formulates stroke offset of SVG circle matching percent
+            const strokeOffset = 220 - (220 * percentage) / 100;
+            return (
+                <div class="glass-card rounded-xl p-5 flex flex-col items-center justify-center">
+                    <h4 class="text-textMuted text-xs font-semibold mb-3 tracking-wider uppercase">AI Confidence Target</h4>
+                    <div class="relative flex items-center justify-center mb-2">
+                        <svg class="w-24 h-24 transform -rotate-90">
+                            <circle cx="48" cy="48" r="35" stroke="#12182c" stroke-width="6" fill="transparent" />
+                            <circle cx="48" cy="48" r="35" stroke="#00e5ff" stroke-width="6" fill="transparent"
+                                stroke-dasharray="220" stroke-dashoffset={strokeOffset} stroke-linecap="round" />
+                        </svg>
+                        <span class="absolute font-outfit text-xl font-extrabold text-accentCyan">{percentage}%</span>
+                    </div>
+                    <span class="text-xs text-textMuted">Model classification confidence</span>
+                </div>
+            );
+        }
+
+        // =====================================================================
+        // MAIN APPLICATION ROOT CONTAINER
+        // =====================================================================
+        function App() {
+            const [activeTab, setActiveTab] = useState("Dashboard");
+            const [authSession, setAuthSession] = useState(() => {
+                const stored = readStoredAuth();
+                if (!stored?.accessToken) return null;
+                if (isTokenExpired(stored.accessToken)) return null;
+                return { accessToken: stored.accessToken, refreshToken: stored.refreshToken || null };
+            });
+            const [authStatus, setAuthStatus] = useState(() => {
+                const stored = readStoredAuth();
+                if (!stored?.accessToken) return 'login-required';
+                return isTokenExpired(stored.accessToken) ? 'login-required' : 'ready';
+            });
+            const [authError, setAuthError] = useState('');
+            const [authUsername, setAuthUsername] = useState('admin');
+            const [authPassword, setAuthPassword] = useState('StrongPass1');
+
+            // App state registers
+            const [localCams, setLocalCams] = useState(initialCameras);
+            const [localAlerts, setLocalAlerts] = useState(initialAlerts);
+            const [selectedCamStream, setSelectedCamStream] = useState(null);
+            const [showHeatmap, setShowHeatmap] = useState(true);
+            const [showArrows, setShowArrows] = useState(true);
+            const [showEvac, setShowEvac] = useState(false);
+            const [reportScope, setReportScope] = useState("DAILY");
+            const [reportData, setReportData] = useState({
+                totalHeadcount: 385,
+                avgDailyHeadcount: 284,
+                peakOccupancy: 88,
+                maxDensity: 5.2,
+                riskEvents: 4,
+                criticalCount: 1,
+                headcountSeries: [220, 245, 280, 310, 290, 330, 360],
+                densitySeries: [2.4, 3.1, 3.8, 4.5, 3.7, 4.9, 5.1],
+                incidents: [
+                    { id: "INC-401", camera: "CAM-02", zone: "South Escalators", level: "HIGH", density: "4.8", confidence: "92", status: "MONITOR" },
+                    { id: "INC-402", camera: "CAM-01", zone: "Main Entrance", level: "MEDIUM", density: "3.6", confidence: "84", status: "RESOLVED" }
+                ]
+            });
+
+            // Simulation metric values
+            const [simDensity, setSimDensity] = useState(3.4);
+            const [simOccupancy, setSimOccupancy] = useState(72.0);
+            const [simQueues, setSimQueues] = useState(14);
+            const [triggerCriticalAlert, setTriggerCriticalAlert] = useState(false);
+
+            const socketUrl = authSession?.accessToken && !isTokenExpired(authSession.accessToken)
+                ? `${defaultSocketUrl}?token=${encodeURIComponent(authSession.accessToken)}`
+                : null;
+
+            const { status: socketStatus, lastMessage: liveTelemetry } = useReconnectingWebSocket(socketUrl, {
+                enabled: authStatus === 'ready' && Boolean(socketUrl),
+                onMessage: () => {},
+                onAuthError: (payload) => {
+                    if (payload?.error === 'TOKEN_EXPIRED' || payload?.message?.toLowerCase().includes('expired')) {
+                        clearStoredAuth();
+                        setAuthSession(null);
+                        setAuthStatus('login-required');
+                        setAuthError('Your session expired. Please sign in again.');
+                    }
+                }
+            });
+
+            useEffect(() => {
+                if (!liveTelemetry) return;
+
+                const crowdCount = Number(liveTelemetry.crowd_count || 0);
+                const riskScore = Number(liveTelemetry.risk?.score || 0);
+                const derivedDensity = Math.max(0.5, Math.min(8, riskScore / 18));
+                const derivedOccupancy = Math.max(20, Math.min(150, crowdCount * 1.6));
+                const derivedQueues = Math.max(0, Math.min(50, Math.round(crowdCount / 3)));
+
+                setSimDensity(Number(derivedDensity.toFixed(1)));
+                setSimOccupancy(Number(derivedOccupancy.toFixed(1)));
+                setSimQueues(derivedQueues);
+            }, [liveTelemetry]);
+
+            useEffect(() => {
+                const initializeAuth = async () => {
+                    const stored = readStoredAuth();
+                    if (!stored?.accessToken) {
+                        setAuthStatus('login-required');
+                        return;
+                    }
+
+                    if (!isTokenExpired(stored.accessToken)) {
+                        setAuthSession({ accessToken: stored.accessToken, refreshToken: stored.refreshToken || null });
+                        setAuthStatus('ready');
+                        return;
+                    }
+
+                    if (stored.refreshToken) {
+                        try {
+                            const refreshed = await refreshNexoraToken(stored.refreshToken);
+                            writeStoredAuth(refreshed.accessToken, refreshed.refreshToken);
+                            setAuthSession({ accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken });
+                            setAuthStatus('ready');
+                            setAuthError('');
+                        } catch (error) {
+                            clearStoredAuth();
+                            setAuthSession(null);
+                            setAuthStatus('login-required');
+                            setAuthError('Your session expired. Please sign in again.');
+                        }
+                        return;
+                    }
+
+                    clearStoredAuth();
+                    setAuthSession(null);
+                    setAuthStatus('login-required');
+                    setAuthError('Your session expired. Please sign in again.');
+                };
+
+                initializeAuth();
+            }, []);
+
+            const handleLoginSubmit = async (event) => {
+                event.preventDefault();
+                setAuthStatus('authenticating');
+                setAuthError('');
+
+                try {
+                    const session = await loginToNexora(authUsername, authPassword);
+                    writeStoredAuth(session.accessToken, session.refreshToken);
+                    setAuthSession({ accessToken: session.accessToken, refreshToken: session.refreshToken });
+                    setAuthStatus('ready');
+                } catch (error) {
+                    setAuthError(error.message || 'Login failed');
+                    setAuthStatus('login-required');
+                }
+            };
+
+            const handleLogout = () => {
+                clearStoredAuth();
+                setAuthSession(null);
+                setAuthStatus('login-required');
+                setAuthError('');
+            };
+
+            // Re-render Lucide Icons whenever page view shifts tabs
+            useEffect(() => {
+                lucide.createIcons();
+            }, [activeTab, selectedCamStream, triggerCriticalAlert]);
+
+            // Formulate current calculated risk
+            const getCurrentRisk = () => {
+                if (simDensity >= 5.0 || simOccupancy >= 100.0 || simQueues >= 35) return "RED";
+                if (simDensity >= 3.0 || simOccupancy >= 80.0 || simQueues >= 20) return "ORANGE";
+                if (simDensity >= 1.8 || simOccupancy >= 60.0 || simQueues >= 10) return "YELLOW";
+                return "GREEN";
+            };
+
+            const currentRisk = getCurrentRisk();
+
+            // Auto-trigger modal overlay on CRITICAL Red
+            useEffect(() => {
+                if (currentRisk === "RED") {
+                    setTriggerCriticalAlert(true);
+                }
+            }, [currentRisk]);
+
+            // Acknowledge Emergency Function
+            const handleAcknowledgeEmergency = (alertId) => {
+                setLocalAlerts(prev => prev.map(a => a.id === alertId ? { ...a, acknowledged: true } : a));
+                setTriggerCriticalAlert(false);
+                // Reset metrics sliders
+                setSimDensity(1.5);
+                setSimOccupancy(35.0);
+                setSimQueues(4);
+            };
+
+            const handleGenerateReport = () => {
+                const nextPayload = {
+                    ...reportData,
+                    totalHeadcount: reportData.totalHeadcount + 14,
+                    avgDailyHeadcount: reportData.avgDailyHeadcount + 8,
+                    peakOccupancy: Math.max(reportData.peakOccupancy, 90),
+                    maxDensity: Math.max(reportData.maxDensity, 5.4),
+                    riskEvents: reportData.riskEvents + 1,
+                    criticalCount: reportData.criticalCount + (reportScope === "INCIDENT" ? 1 : 0),
+                    headcountSeries: reportData.headcountSeries.map((value, idx) => value + (idx % 2 === 0 ? 8 : -3)),
+                    densitySeries: reportData.densitySeries.map((value, idx) => Number((value + (idx % 2 === 0 ? 0.2 : -0.1)).toFixed(1))),
+                    incidents: [
+                        {
+                            id: `INC-${Date.now().toString().slice(-3)}`,
+                            camera: localCams[0]?.id || "CAM-01",
+                            zone: localCams[0]?.zone || "Zone A",
+                            level: simDensity > 5 ? "CRITICAL" : "HIGH",
+                            density: simDensity.toFixed(1),
+                            confidence: "95",
+                            status: "ACTIVE"
+                        },
+                        ...reportData.incidents.slice(0, 2)
+                    ]
+                };
+                setReportData(nextPayload);
+            };
+
+            const handleExportPDF = () => {
+                window.alert(`PDF export prepared for ${reportScope.toLowerCase()} report.`);
+            };
+
+            const handleExportExcel = () => {
+                window.alert(`Excel export prepared for ${reportScope.toLowerCase()} report.`);
+            };
+
+            // Handle Camera Create Setup
+            const handleAddCamera = (newCam) => {
+                setLocalCams(prev => [...prev, { ...newCam, id: `CAM-0${prev.length + 1}`, status: "ACTIVE" }]);
+            };
+
+            if (authStatus !== 'ready') {
+                return (
+                    <div class="flex h-screen w-screen bg-bgPrimary text-textPrimary overflow-hidden font-inter items-center justify-center p-6">
+                        <div class="w-full max-w-md glass-card rounded-2xl border border-borderBlue p-8 shadow-[0_0_24px_rgba(0,229,255,0.12)]">
+                            <div class="flex items-center gap-3 mb-6">
+                                <div class="w-8 h-8 bg-gradient-to-br from-accentCyan to-accentBlue rounded-md"></div>
+                                <div>
+                                    <h2 class="font-outfit font-extrabold text-xl">NEXORA Secure Access</h2>
+                                    <p class="text-xs text-textMuted">Sign in to open the authenticated live stream.</p>
+                                </div>
+                            </div>
+
+                            <form onSubmit={handleLoginSubmit} class="flex flex-col gap-4">
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-xs uppercase tracking-wider text-textMuted">Username</label>
+                                    <input
+                                        value={authUsername}
+                                        onChange={(e) => setAuthUsername(e.target.value)}
+                                        class="bg-bgSecondary border border-borderBlue rounded-lg px-3 py-2.5 text-sm text-textPrimary outline-none focus:border-accentCyan"
+                                        placeholder="admin"
+                                        required
+                                    />
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-xs uppercase tracking-wider text-textMuted">Password</label>
+                                    <input
+                                        type="password"
+                                        value={authPassword}
+                                        onChange={(e) => setAuthPassword(e.target.value)}
+                                        class="bg-bgSecondary border border-borderBlue rounded-lg px-3 py-2.5 text-sm text-textPrimary outline-none focus:border-accentCyan"
+                                        placeholder="StrongPass1"
+                                        required
+                                    />
+                                </div>
+                                {authError && <p class="text-xs text-statusRed">{authError}</p>}
+                                <button type="submit" class="bg-accentCyan text-bgPrimary font-bold py-3 rounded-lg text-sm">
+                                    {authStatus === 'authenticating' ? 'Signing in…' : 'Sign In'}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div class="flex h-screen w-screen bg-bgPrimary text-textPrimary overflow-hidden font-inter">
+
+                    {/* SIDEBAR OPERATIONAL MENU */}
+                    <aside class="w-64 bg-bgSecondary border-r border-borderBlue flex flex-col justify-between p-6">
+                        <div>
+                            <div class="flex items-center gap-3 mb-8">
+                                <div class="w-6 h-6 bg-gradient-to-br from-accentCyan to-accentBlue rounded-md shadow-[0_0_10px_rgba(0,229,255,0.4)]"></div>
+                                <h1 class="font-outfit font-extrabold text-xl tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white to-accentCyan">NEXORA</h1>
+                            </div>
+
+                            <hr class="border-borderBlue mb-6" />
+
+                            <nav class="flex flex-col gap-2">
+                                {[
+                                    { name: "Dashboard", icon: "layout-dashboard" },
+                                    { name: "Live Monitoring", icon: "activity" },
+                                    { name: "Analytics", icon: "bar-chart-3" },
+                                    { name: "Alerts", icon: "bell" },
+                                    { name: "Reports", icon: "file-text" },
+                                    { name: "Settings", icon: "settings" }
+                                ].map(tab => (
+                                    <button
+                                        key={tab.name}
+                                        onClick={() => { setActiveTab(tab.name); setSelectedCamStream(null); }}
+                                        class={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${activeTab === tab.name
+                                            ? 'bg-bgTertiary text-textPrimary border-l-4 border-accentCyan'
+                                            : 'text-textMuted hover:bg-bgTertiary/50 hover:text-textPrimary'
+                                            }`}
+                                    >
+                                        <i data-lucide={tab.icon} class="w-4 h-4"></i>
+                                        <span>{tab.name}</span>
+                                    </button>
+                                ))}
+                            </nav>
+                        </div>
+
+                        <div class="glass-card rounded-lg p-3 border-borderBlue flex items-center gap-3">
+                            <div class="w-3 h-3 rounded-full bg-statusGreen shadow-[0_0_8px_#00e5a3]"></div>
+                            <div class="text-left">
+                                <p class="text-[10px] text-textMuted font-bold uppercase tracking-wider">System Agent</p>
+                                <p class="text-xs font-semibold text-accentCyan">AGENT_ACTIVE_WS</p>
+                            </div>
+                        </div>
+                    </aside>
+
+                    {/* MAIN CONSOLE DESK */}
+                    <main class="flex-grow flex flex-col h-full overflow-hidden">
+
+                        {/* NAVBAR */}
+                        <header class="h-[70px] bg-bgSecondary border-b border-borderBlue px-8 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <h2 class="font-outfit font-semibold text-lg tracking-wide uppercase">{activeTab} COMMAND SCREEN</h2>
+                                {currentRisk === "RED" && (
+                                    <span class="bg-statusRed/10 text-statusRed border border-statusRed text-xs font-bold px-3 py-1 rounded-full animate-pulse">
+                                        ⚠️ RED CRITICAL LEVEL ALERT
+                                    </span>
+                                )}
+                            </div>
+                            <div class="flex items-center gap-6">
+                                <button onClick={handleLogout} class="text-xs text-textMuted hover:text-accentCyan">Logout</button>
+                                <div class="flex items-center gap-3 rounded-full border border-borderBlue bg-bgPrimary/70 px-3 py-2">
+                                    <span class={`w-2.5 h-2.5 rounded-full ${socketStatus === 'Connected' ? 'bg-statusGreen' : socketStatus === 'Reconnecting' ? 'bg-statusOrange' : socketStatus === 'Connecting' ? 'bg-statusYellow' : 'bg-statusRed'}`}></span>
+                                    <div class="text-right">
+                                        <p class="text-[10px] uppercase tracking-[0.25em] text-textMuted">Live Socket</p>
+                                        <span class="text-xs font-bold text-accentCyan">{socketStatus.toUpperCase()}</span>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-xs text-textMuted">Operational Mode</p>
+                                    <span class="text-xs font-bold text-accentCyan">OPERATOR DESK 04</span>
+                                </div>
+                            </div>
+                        </header>
+
+                        {/* PAGE WORKSPACE CONTENT */}
+                        <div class="flex-grow overflow-y-auto p-8">
+
+                            {/* A. DASHBOARD VIEW */}
+                            {activeTab === "Dashboard" && (
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                                    {/* Stats top cards */}
+                                    <StatCard title="Total Group Count" value="385 Persons" change="+14%" changeType="positive" icon="users" />
+                                    <StatCard title="Average Occupancy" value={`${simOccupancy}%`} change="+4%" changeType="positive" icon="percentage" />
+                                    <StatCard title="Active Queuing Lanes" value={`${simQueues} Groups`} change="+2" changeType="negative" icon="git-commit" />
+                                    <StatCard title="System Flow Latency" value="18ms" change="Normal" changeType="positive" icon="cpu" />
+
+                                    {/* Middle Dashboard Analytics visualization */}
+                                    <div class="md:col-span-3 glass-card rounded-xl p-6 flex flex-col gap-4">
+                                        <div class="flex justify-between items-center border-b border-borderBlue pb-4">
+                                            <h3 class="font-outfit font-semibold text-textPrimary">2D Crowd Spatial Path Analysis</h3>
+                                            <span class="text-xs text-accentCyan font-bold uppercase tracking-wider flex items-center gap-2">
+                                                <span class="w-2.5 h-2.5 rounded-full bg-accentCyan animate-ping"></span> Live Tracking
+                                            </span>
+                                        </div>
+                                        <div class="h-64 rounded-lg bg-bgPrimary flex items-center justify-center relative overflow-hidden border border-borderBlue">
+                                            <div class="absolute top-4 right-4 flex items-center gap-4 text-xs font-semibold z-10">
+                                                <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-statusGreen"></span> Safe Egress</span>
+                                                <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-statusRed"></span> Restricted Zone</span>
+                                            </div>
+                                            <Interactive2DMap showHeatmap={true} showArrows={true} pedestrians={mockPedestrians(simDensity)} />
+                                        </div>
+                                    </div>
+
+                                    {/* Risk meters right widgets */}
+                                    <div class="flex flex-col gap-6">
+                                        <RiskMeter value={currentRisk} />
+                                        <ConfidenceGauge percentage={96} />
+                                    </div>
+
+                                    {/* Bottom Activity Alerts Grid */}
+                                    <div class="md:col-span-4 glass-card rounded-xl p-6">
+                                        <h3 class="font-outfit font-semibold text-textPrimary mb-4">Active Alarm Incidents</h3>
+                                        <div class="overflow-x-auto">
+                                            <table class="w-full text-left font-semibold text-sm border-collapse">
+                                                <thead>
+                                                    <tr class="border-b border-borderBlue text-textMuted font-bold text-xs uppercase tracking-wider">
+                                                        <th class="py-3 px-4">Ref Log</th>
+                                                        <th class="py-3 px-4">Sensor Camera</th>
+                                                        <th class="py-3 px-4">Monitored Zone</th>
+                                                        <th class="py-3 px-4">Class</th>
+                                                        <th class="py-3 px-4">Confidence</th>
+                                                        <th class="py-3 px-4">Actions</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {localAlerts.map(alert => (
+                                                        <tr key={alert.id} class="border-b border-borderBlue/50 hover:bg-bgTertiary/30 transition-all font-medium">
+                                                            <td class="py-4 px-4 text-accentCyan font-mono">{alert.id}</td>
+                                                            <td class="py-4 px-4 font-mono">{alert.camera}</td>
+                                                            <td class="py-4 px-4">{alert.zone}</td>
+                                                            <td class="py-4 px-4">
+                                                                <span class={`px-3 py-1 rounded-full text-xs font-bold ${alert.level === 'RED' ? 'bg-statusRed/10 text-statusRed border border-statusRed' : 'bg-statusYellow/10 text-statusYellow border border-statusYellow'
+                                                                    }`}>
+                                                                    {alert.level}
+                                                                </span>
+                                                            </td>
+                                                            <td class="py-4 px-4 font-mono">{alert.confidence}%</td>
+                                                            <td class="py-4 px-4">
+                                                                {alert.acknowledged ? (
+                                                                    <span class="text-statusGreen text-xs font-semibold flex items-center gap-1">
+                                                                        <i data-lucide="check" class="w-4 h-4"></i> Acknowledged
+                                                                    </span>
+                                                                ) : (
+                                                                    <button
+                                                                        onClick={() => handleAcknowledgeEmergency(alert.id)}
+                                                                        class="bg-statusRed border border-statusRed text-white py-1 px-3 rounded-md text-xs font-bold hover:shadow-[0_0_8px_rgba(255,42,84,0.4)] transition-all"
+                                                                    >
+                                                                        Acknowledge
+                                                                    </button>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* B. LIVE MONITORING VIEW */}
+                            {activeTab === "Live Monitoring" && (
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
+                                    <div class="md:col-span-2 flex flex-col gap-6">
+                                        <div class="glass-card rounded-xl p-5 flex justify-between items-center">
+                                            <div>
+                                                <h3 class="font-outfit font-semibold text-textPrimary">2D Spatial Coordinates Intercept Map</h3>
+                                                <p class="text-xs text-textMuted mt-1">Tracks live pedestrian particles matching camera coverage regions.</p>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex-grow min-h-[400px] rounded-xl relative overflow-hidden border border-borderBlue bg-bgSecondary flex items-center justify-center p-4">
+                                            <Interactive2DMap
+                                                showHeatmap={showHeatmap}
+                                                showArrows={showArrows}
+                                                showEvac={showEvac}
+                                                pedestrians={mockPedestrians(simDensity)}
+                                                onCameraClick={(camId) => setSelectedCamStream(camId)}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Video playback stream sidebar */}
+                                    <div class="flex flex-col gap-6">
+                                        <div class="glass-card rounded-xl p-5">
+                                            <h4 class="font-outfit font-semibold text-textPrimary mb-4">Tactical Feeds Switchboard</h4>
+                                            <div class="flex flex-col gap-2">
+                                                {localCams.map(cam => (
+                                                    <button
+                                                        key={cam.id}
+                                                        onClick={() => setSelectedCamStream(cam.id)}
+                                                        class={`flex justify-between items-center p-3 rounded-lg border text-sm font-semibold transition-all ${selectedCamStream === cam.id
+                                                            ? 'bg-bgTertiary border-accentCyan text-textPrimary'
+                                                            : 'bg-bgSecondary/50 border-borderBlue text-textMuted hover:border-borderBlue hover:text-textPrimary'
+                                                            }`}
+                                                    >
+                                                        <span>{cam.name}</span>
+                                                        <span class={`w-2.5 h-2.5 rounded-full ${cam.status === 'ACTIVE' ? 'bg-statusGreen' : 'bg-statusRed'}`}></span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Streaming Preview box */}
+                                        {selectedCamStream ? (
+                                            <div class="glass-card rounded-xl p-5 border-accentCyan shadow-[0_0_12px_rgba(0,229,255,0.2)]">
+                                                <div class="flex justify-between items-center mb-3">
+                                                    <span class="text-xs text-accentCyan font-bold uppercase tracking-wider font-mono">{selectedCamStream} STREAM PREVIEW</span>
+                                                    <button onClick={() => setSelectedCamStream(null)} class="text-textMuted text-xs hover:text-white">Close</button>
+                                                </div>
+                                                <div class="h-44 rounded bg-black relative overflow-hidden flex items-center justify-center border border-borderBlue">
+                                                    <div class="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px] pointer-events-none z-10"></div>
+                                                    <span class="text-xs text-statusGreen font-mono uppercase tracking-wider animate-pulse flex items-center gap-1.5">
+                                                        <span class="w-2 h-2 bg-statusGreen rounded-full"></span> analyzing video feed
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div class="glass-card rounded-xl p-5 text-center text-textMuted flex flex-col justify-center items-center h-44 border-dashed border-2">
+                                                <i data-lucide="video" class="w-8 h-8 mb-2 text-textMuted"></i>
+                                                <p class="text-xs">Select any Camera node from switchboard to stream RTSP capture logs.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* C. ANALYTICS VIEW */}
+                            {activeTab === "Analytics" && (
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="glass-card rounded-xl p-6">
+                                        <h3 class="font-outfit font-semibold text-textPrimary mb-4">Historical Density Trends (Last 24 Hours)</h3>
+                                        <div class="h-64 bg-bgSecondary border border-borderBlue rounded-lg flex items-center justify-end p-4 font-mono text-xs text-textMuted">
+                                            {/* Custom SVG line chart visualization */}
+                                            <svg class="w-full h-full" viewBox="0 0 400 150">
+                                                <path d="M 10,120 Q 80,40 150,110 T 300,30 T 400,90" fill="none" stroke="var(--accentCyan)" stroke-width="2.5" />
+                                                <path d="M 10,120 Q 80,40 150,110 T 300,30 T 400,90 L 400,150 L 10,150 Z" fill="url(#grad)" opacity="0.1" />
+                                                <defs>
+                                                    <linearGradient id="grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                                                        <stop offset="0%" stop-color="var(--accentCyan)" />
+                                                        <stop offset="100%" stop-color="transparent" />
+                                                    </linearGradient>
+                                                </defs>
+                                                <text x="15" y="145" fill="var(--textMuted)">08:00</text>
+                                                <text x="180" y="145" fill="var(--textMuted)">16:00</text>
+                                                <text x="350" y="145" fill="var(--textMuted)">24:00</text>
+                                            </svg>
+                                        </div>
+                                    </div>
+
+                                    <div class="glass-card rounded-xl p-6">
+                                        <h3 class="font-outfit font-semibold text-textPrimary mb-4">Speed Vectors & Bottlenecks Analysis</h3>
+                                        <div class="h-64 bg-bgSecondary border border-borderBlue rounded-lg flex items-center justify-center p-4">
+                                            <div class="flex flex-col gap-4 w-full">
+                                                <div>
+                                                    <div class="flex justify-between text-xs font-semibold mb-1">
+                                                        <span>Tunnel Corridor A Capacity</span>
+                                                        <span class="text-statusGreen">45% Occupancy</span>
+                                                    </div>
+                                                    <div class="w-full bg-bgPrimary rounded-full h-2">
+                                                        <div class="bg-statusGreen h-2 rounded-full" style={{ width: '45%' }}></div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div class="flex justify-between text-xs font-semibold mb-1">
+                                                        <span>Escalators Bottleneck Riskway</span>
+                                                        <span class="text-statusOrange">82% Congested</span>
+                                                    </div>
+                                                    <div class="w-full bg-bgPrimary rounded-full h-2">
+                                                        <div class="bg-statusOrange h-2 rounded-full" style={{ width: '82%' }}></div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div class="flex justify-between text-xs font-semibold mb-1">
+                                                        <span>Exit Gate B Egress Rate</span>
+                                                        <span class="text-accentCyan">Normal Flow</span>
+                                                    </div>
+                                                    <div class="w-full bg-bgPrimary rounded-full h-2">
+                                                        <div class="bg-accentCyan h-2 rounded-full" style={{ width: '28%' }}></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* D. ALERTS VIEW */}
+                            {activeTab === "Alerts" && (
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div class="md:col-span-2 glass-card rounded-xl p-6">
+                                        <h3 class="font-outfit font-semibold text-textPrimary mb-4">Critical Incidents Manager</h3>
+
+                                        <div class="flex flex-col gap-4">
+                                            {localAlerts.map(alert => (
+                                                <div key={alert.id} class={`p-5 rounded-xl border flex flex-col gap-4 ${alert.acknowledged ? 'bg-bgSecondary/60 border-borderBlue' : 'bg-statusRed/5 border-statusRed critical-alert-animation'
+                                                    }`}>
+                                                    <div class="flex justify-between items-center">
+                                                        <div class="flex items-center gap-3">
+                                                            <span class="text-sm font-mono text-accentCyan font-extrabold">{alert.id}</span>
+                                                            <span class={`px-2 py-0.5 rounded text-[10px] font-bold ${alert.level === 'RED' ? 'bg-statusRed text-white' : 'bg-statusYellow text-bgPrimary'
+                                                                }`}>{alert.level}</span>
+                                                        </div>
+                                                        <span class="text-xs text-textMuted">{alert.time}</span>
+                                                    </div>
+                                                    <p class="text-sm text-textPrimary">{alert.message}</p>
+
+                                                    {/* XAI explaining criteria section */}
+                                                    <div class="bg-bgPrimary/60 p-3 rounded-lg border border-borderBlue text-xs font-semibold">
+                                                        <span class="text-accentCyan font-bold uppercase tracking-wider block mb-1">SHAP AI Explanation Model</span>
+                                                        <span>Prediction is triggered by high density ({simDensity} ppl/sqm) combined with a slow average queue velocity index.</span>
+                                                    </div>
+
+                                                    <div class="flex gap-4 mt-2">
+                                                        {!alert.acknowledged && (
+                                                            <button
+                                                                onClick={() => handleAcknowledgeEmergency(alert.id)}
+                                                                class="bg-statusRed hover:bg-[#cc1b3e] text-white font-bold py-2 px-4 rounded-md text-xs transition-all"
+                                                            >
+                                                                Acknowledge & Deploy Evacuation Signage
+                                                            </button>
+                                                        )}
+                                                        <button class="bg-bgTertiary text-textPrimary hover:bg-bgPrimary border border-borderBlue font-bold py-2 px-4 rounded-md text-xs transition-all">
+                                                            View Camera Stream
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Simulation controls panel */}
+                                    <div class="glass-card rounded-xl p-5">
+                                        <h3 class="font-outfit font-semibold text-textPrimary mb-4">Simulation Trigger Panel</h3>
+                                        <p class="text-xs text-textMuted mb-6 leading-relaxed">
+                                            Manually adjust inputs to trigger different risk bands. Setting metrics above threshold values automatically changes risk state to Critical.
+                                        </p>
+
+                                        <div class="flex flex-col gap-6">
+                                            <div class="flex flex-col gap-2">
+                                                <div class="flex justify-between text-xs">
+                                                    <span>Density Value</span>
+                                                    <span class="text-accentCyan font-semibold font-mono">{simDensity} ppl/m²</span>
+                                                </div>
+                                                <input type="range" min="0.5" max="8.0" step="0.1" value={simDensity}
+                                                    onChange={(e) => setSimDensity(parseFloat(e.target.value))}
+                                                    class="w-full h-1.5 bg-bgPrimary rounded-lg appearance-none cursor-pointer accent-accentCyan" />
+                                            </div>
+
+                                            <div class="flex flex-col gap-2">
+                                                <div class="flex justify-between text-xs">
+                                                    <span>Occupancy Ratio</span>
+                                                    <span class="text-accentCyan font-semibold font-mono">{simOccupancy}%</span>
+                                                </div>
+                                                <input type="range" min="5" max="150" value={simOccupancy}
+                                                    onChange={(e) => setSimOccupancy(parseInt(e.target.value))}
+                                                    class="w-full h-1.5 bg-bgPrimary rounded-lg appearance-none cursor-pointer accent-accentCyan" />
+                                            </div>
+
+                                            <div class="flex flex-col gap-2">
+                                                <div class="flex justify-between text-xs">
+                                                    <span>Lanes Queue Counts</span>
+                                                    <span class="text-accentCyan font-semibold font-mono">{simQueues} Persons</span>
+                                                </div>
+                                                <input type="range" min="0" max="50" value={simQueues}
+                                                    onChange={(e) => setSimQueues(parseInt(e.target.value))}
+                                                    class="w-full h-1.5 bg-bgPrimary rounded-lg appearance-none cursor-pointer accent-accentCyan" />
+                                            </div>
+
+                                            <button
+                                                onClick={() => { setSimDensity(6.2); setSimOccupancy(112); setSimQueues(44); }}
+                                                class="w-full bg-statusRed text-white py-3 rounded-lg text-xs font-bold hover:shadow-[0_0_12px_rgba(255,42,84,0.4)] transition-all"
+                                            >
+                                                Trigger Simulation Critical Emergency
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* E. REPORTS VIEW */}
+                            {activeTab === "Reports" && (
+                                <div class="flex flex-col gap-6">
+
+                                    {/* Report Generator Panel */}
+                                    <div class="glass-card rounded-xl p-6">
+                                        <div class="flex justify-between items-center mb-5">
+                                            <div>
+                                                <h3 class="font-outfit font-semibold text-textPrimary">Report Generation Engine</h3>
+                                                <p class="text-xs text-textMuted mt-1">Generate, preview, and export crowd intelligence reports across configurable time scopes.</p>
+                                            </div>
+                                            <span class="text-[10px] bg-accentCyan/10 border border-accentCyan text-accentCyan font-bold px-3 py-1 rounded-full">AUTO COMPILER v2.1</span>
+                                        </div>
+
+                                        {/* Scope Tabs */}
+                                        <div class="flex gap-3 mb-5">
+                                            {["DAILY", "WEEKLY", "MONTHLY", "INCIDENT"].map(scope => (
+                                                <button key={scope}
+                                                    onClick={() => setReportScope(scope)}
+                                                    class={`px-4 py-2.5 rounded-lg border text-xs font-bold transition-all ${reportScope === scope
+                                                        ? 'bg-bgTertiary border-accentCyan text-accentCyan shadow-[0_0_8px_rgba(0,229,255,0.15)]'
+                                                        : 'bg-bgPrimary border-borderBlue text-textMuted hover:border-accentCyan hover:text-textPrimary'}`}
+                                                >
+                                                    {scope === "INCIDENT" ? "Incident Report" : scope.charAt(0) + scope.slice(1).toLowerCase() + " Report"}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        {/* Export Buttons */}
+                                        <div class="flex gap-3">
+                                            <button onClick={handleExportPDF}
+                                                class="flex items-center gap-2 bg-statusRed text-white font-bold py-2.5 px-5 rounded-lg text-xs hover:shadow-[0_0_12px_rgba(255,42,84,0.4)] transition-all">
+                                                <i data-lucide="file-text" class="w-4 h-4"></i> Export PDF
+                                            </button>
+                                            <button onClick={handleExportExcel}
+                                                class="flex items-center gap-2 bg-statusGreen text-bgPrimary font-bold py-2.5 px-5 rounded-lg text-xs hover:shadow-[0_0_12px_rgba(0,229,163,0.4)] transition-all">
+                                                <i data-lucide="table" class="w-4 h-4"></i> Export Excel
+                                            </button>
+                                            <button onClick={handleGenerateReport}
+                                                class="flex items-center gap-2 bg-accentCyan text-bgPrimary font-bold py-2.5 px-5 rounded-lg text-xs hover:shadow-[0_0_12px_rgba(0,229,255,0.5)] transition-all ml-auto">
+                                                <i data-lucide="refresh-cw" class="w-4 h-4"></i> Generate Report
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Analytics Summary Cards */}
+                                    <div class="grid grid-cols-4 gap-4">
+                                        <div class="glass-card rounded-xl p-4">
+                                            <span class="text-[10px] text-textMuted font-bold uppercase tracking-wider block">Total Headcount</span>
+                                            <span class="font-outfit font-extrabold text-2xl text-accentCyan block mt-1">{reportData.totalHeadcount.toLocaleString()}</span>
+                                            <span class="text-[10px] text-textMuted">Avg {reportData.avgDailyHeadcount.toLocaleString()}/day</span>
+                                        </div>
+                                        <div class="glass-card rounded-xl p-4">
+                                            <span class="text-[10px] text-textMuted font-bold uppercase tracking-wider block">Peak Occupancy</span>
+                                            <span class="font-outfit font-extrabold text-2xl text-accentCyan block mt-1">{reportData.peakOccupancy}%</span>
+                                            <span class="text-[10px] text-textMuted">Maximum recorded rate</span>
+                                        </div>
+                                        <div class="glass-card rounded-xl p-4">
+                                            <span class="text-[10px] text-textMuted font-bold uppercase tracking-wider block">Max Density</span>
+                                            <span class="font-outfit font-extrabold text-2xl text-statusOrange block mt-1">{reportData.maxDensity} ppl/m²</span>
+                                            <span class="text-[10px] text-textMuted">Peak density value</span>
+                                        </div>
+                                        <div class="glass-card rounded-xl p-4">
+                                            <span class="text-[10px] text-textMuted font-bold uppercase tracking-wider block">Risk Events</span>
+                                            <span class="font-outfit font-extrabold text-2xl text-statusRed block mt-1">{reportData.riskEvents}</span>
+                                            <span class="text-[10px] text-textMuted">{reportData.criticalCount} critical incidents</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Charts Row */}
+                                    <div class="grid grid-cols-2 gap-6">
+                                        <div class="glass-card rounded-xl p-5">
+                                            <h4 class="text-[10px] text-textMuted font-bold uppercase tracking-wider mb-4">
+                                                Headcount Trend ({reportScope})
+                                            </h4>
+                                            <div class="h-48 bg-bgSecondary border border-borderBlue rounded-lg flex items-end justify-center p-4 gap-1">
+                                                {reportData.headcountSeries.map((val, i) => (
+                                                    <div key={i} class="bg-accentCyan/80 rounded-t-sm" style={{
+                                                        width: `${Math.max(6, 100 / reportData.headcountSeries.length - 2)}%`,
+                                                        height: `${(val / Math.max(...reportData.headcountSeries)) * 85}%`,
+                                                        minHeight: '4px'
+                                                    }}></div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div class="glass-card rounded-xl p-5">
+                                            <h4 class="text-[10px] text-textMuted font-bold uppercase tracking-wider mb-4">
+                                                Density Trend ({reportScope})
+                                            </h4>
+                                            <div class="h-48 bg-bgSecondary border border-borderBlue rounded-lg flex items-end justify-center p-4 gap-1">
+                                                {reportData.densitySeries.map((val, i) => (
+                                                    <div key={i} class="rounded-t-sm" style={{
+                                                        width: `${Math.max(6, 100 / reportData.densitySeries.length - 2)}%`,
+                                                        height: `${(val / Math.max(...reportData.densitySeries)) * 85}%`,
+                                                        minHeight: '4px',
+                                                        background: val > 5.0 ? 'var(--status-red)' : (val > 3.0 ? 'var(--status-orange)' : 'var(--status-green)')
+                                                    }}></div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Incident Audit Table */}
+                                    <div class="glass-card rounded-xl overflow-hidden">
+                                        <div class="p-4 border-b border-borderBlue flex justify-between items-center">
+                                            <h4 class="font-outfit font-semibold">Incident Audit Ledger</h4>
+                                            <span class="text-xs text-textMuted">{reportData.incidents.length} incidents logged</span>
+                                        </div>
+                                        <div class="overflow-x-auto">
+                                            <table class="w-full text-left font-semibold text-sm border-collapse">
+                                                <thead>
+                                                    <tr class="border-b border-borderBlue text-textMuted font-bold text-xs uppercase tracking-wider">
+                                                        <th class="py-3 px-4">ID</th>
+                                                        <th class="py-3 px-4">Camera</th>
+                                                        <th class="py-3 px-4">Zone</th>
+                                                        <th class="py-3 px-4">Risk Level</th>
+                                                        <th class="py-3 px-4">Density</th>
+                                                        <th class="py-3 px-4">AI Conf.</th>
+                                                        <th class="py-3 px-4">Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {reportData.incidents.map((inc, idx) => (
+                                                        <tr key={idx} class="border-b border-borderBlue/50 hover:bg-bgTertiary/30 transition-all font-medium">
+                                                            <td class="py-3 px-4 text-accentCyan font-mono text-xs">{inc.id}</td>
+                                                            <td class="py-3 px-4 font-mono text-xs">{inc.camera}</td>
+                                                            <td class="py-3 px-4 text-xs">{inc.zone}</td>
+                                                            <td class="py-3 px-4">
+                                                                <span class={`px-2 py-0.5 rounded text-[10px] font-bold ${inc.level === 'CRITICAL' ? 'bg-statusRed/10 text-statusRed border border-statusRed' :
+                                                                        inc.level === 'HIGH' ? 'bg-statusOrange/10 text-statusOrange border border-statusOrange' :
+                                                                            'bg-statusYellow/10 text-statusYellow border border-statusYellow'}`}>
+                                                                    {inc.level}
+                                                                </span>
+                                                            </td>
+                                                            <td class="py-3 px-4 font-mono text-xs">{inc.density}</td>
+                                                            <td class="py-3 px-4 font-mono text-xs">{inc.confidence}%</td>
+                                                            <td class="py-3 px-4 text-xs">{inc.status}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    {/* Link to Full Reports Page */}
+                                    <a href="reports.html" target="_blank"
+                                        class="glass-card rounded-xl p-4 flex items-center justify-between border-dashed border-2 hover:border-accentCyan transition-all group">
+                                        <div>
+                                            <span class="text-sm font-semibold text-textPrimary group-hover:text-accentCyan transition-all">Open Full Reports Dashboard →</span>
+                                            <p class="text-xs text-textMuted mt-1">Advanced charting, extended exports, and historical analytics deep-dive.</p>
+                                        </div>
+                                        <i data-lucide="external-link" class="w-5 h-5 text-textMuted group-hover:text-accentCyan transition-all"></i>
+                                    </a>
+
+                                </div>
+                            )}
+
+                            {/* F. SETTINGS VIEW */}
+                            {activeTab === "Settings" && (
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                                    {/* Camera creation form */}
+                                    <div class="glass-card rounded-xl p-6">
+                                        <h3 class="font-outfit font-semibold text-textPrimary mb-4">Register Spatial Camera Node</h3>
+                                        <CameraForm onSubmit={handleAddCamera} />
+                                    </div>
+
+                                    {/* Operational settings options */}
+                                    <div class="glass-card rounded-xl p-6 flex flex-col gap-6">
+                                        <h3 class="font-outfit font-semibold text-textPrimary">Emergency Threshold Tuning</h3>
+
+                                        <div class="flex flex-col gap-4">
+                                            <div class="flex justify-between items-center pb-4 border-b border-borderBlue/50">
+                                                <div>
+                                                    <span class="text-sm font-semibold block">Acoustic Audio Alarm</span>
+                                                    <span class="text-xs text-textMuted">Play oscillator sirens when risk level becomes critical.</span>
+                                                </div>
+                                                <input type="checkbox" defaultChecked class="w-10 h-5 bg-borderBlue checked:bg-accentCyan rounded-full appearance-none cursor-pointer transition-all relative after:content-[''] after:absolute after:w-4 after:h-4 after:bg-white after:rounded-full after:top-0.5 after:left-0.5 after:transition-all checked:after:translate-x-5" />
+                                            </div>
+
+                                            <div class="flex justify-between items-center pb-4 border-b border-borderBlue/50">
+                                                <div>
+                                                    <span class="text-sm font-semibold block">Automatic Signage Routing Evacuation</span>
+                                                    <span class="text-xs text-textMuted">Directly update digital pathway sign displays on warning triggers.</span>
+                                                </div>
+                                                <input type="checkbox" defaultChecked class="w-10 h-5 bg-borderBlue checked:bg-accentCyan rounded-full appearance-none cursor-pointer transition-all relative after:content-[''] after:absolute after:w-4 after:h-4 after:bg-white after:rounded-full after:top-0.5 after:left-0.5 after:transition-all checked:after:translate-x-5" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
+                    </main>
+
+                    {/* =====================================================================
+                         CRITICAL ALARM FULL DIALOG OVERLAY (EMERGENCY POPUP)
+                         ===================================================================== */}
+                    {triggerCriticalAlert && (
+                        <div class="fixed inset-0 bg-black/85 backdrop-filter backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
+                            <div class="w-full max-w-2xl bg-bgSecondary border-2 border-statusRed rounded-xl shadow-[0_0_30px_rgba(255,42,84,0.6)] overflow-hidden">
+                                <div class="bg-statusRed text-white p-5 flex items-center justify-between font-outfit">
+                                    <h4 class="font-extrabold text-lg tracking-wider">⚠️ CRITICAL THREAT ALARM INCIDENT TRIGGERED</h4>
+                                    <span class="font-mono text-sm">REF: AL-1910</span>
+                                </div>
+                                <div class="p-6 flex flex-col gap-6">
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <div class="bg-bgTertiary p-3 rounded-lg border border-borderBlue">
+                                            <span class="text-[10px] text-textMuted font-bold block uppercase mb-1">Target Zone</span>
+                                            <span class="text-xs font-bold">South Escalators</span>
+                                        </div>
+                                        <div class="bg-bgTertiary p-3 rounded-lg border border-borderBlue">
+                                            <span class="text-[10px] text-textMuted font-bold block uppercase mb-1">AI Confidence</span>
+                                            <span class="text-xs font-bold text-accentCyan">96.2%</span>
+                                        </div>
+                                        <div class="bg-bgTertiary p-3 rounded-lg border border-borderBlue">
+                                            <span class="text-[10px] text-textMuted font-bold block uppercase mb-1">Measured Density</span>
+                                            <span class="text-xs font-bold text-statusRed">{simDensity} ppl/m²</span>
+                                        </div>
+                                        <div class="bg-bgTertiary p-3 rounded-lg border border-borderBlue">
+                                            <span class="text-[10px] text-textMuted font-bold block uppercase mb-1">Queuing Length</span>
+                                            <span class="text-xs font-bold text-statusRed">{simQueues} Persons</span>
+                                        </div>
+                                    </div>
+
+                                    {/* XAI Explanation Section */}
+                                    <div class="bg-bgPrimary p-4 rounded-lg border border-borderBlue">
+                                        <span class="text-xs text-textMuted font-bold block mb-1">Reason Behind Machine Prediction (SHAP Values)</span>
+                                        <p class="text-xs leading-relaxed text-textPrimary">
+                                            The risk prediction is driven primarily by density spikes (+38%) and extreme queue congestion (+22%), compounded by slow passenger flow velocity.
+                                        </p>
+                                    </div>
+
+                                    {/* Action Recommendations */}
+                                    <div class="p-4 bg-statusRed/5 border border-statusRed/20 rounded-lg">
+                                        <span class="text-xs text-statusRed font-bold block mb-2">Automate Evacuation Recommendations</span>
+                                        <ol class="list-decimal list-inside text-xs space-y-2 text-textPrimary font-medium">
+                                            <li>Guide evacuees away from South Escalators gates towards Tunnel 4.</li>
+                                            <li>Hot-route digital display signs to present directional egress arrow alerts.</li>
+                                            <li>Dispatch priority alert notices to incident response personnel.</li>
+                                            <li>Play siren oscillator sound warning tones across target zone speakers.</li>
+                                        </ol>
+                                    </div>
+
+                                    {/* Action buttons */}
+                                    <button
+                                        onClick={() => handleAcknowledgeEmergency("AL-1910")}
+                                        class="w-full bg-statusRed hover:bg-[#cc1b3e] text-white py-4 rounded-lg font-bold text-sm tracking-wide transition-all shadow-[0_0_12px_rgba(255,42,84,0.4)]"
+                                    >
+                                        DEPLOY TUNNEL 4 ESCAPE ROUTINGS & ACKNOWLEDGE THREAT
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                </div>
+            );
+        }
+
+        // =====================================================================
+        // 2D CANVAS MAP INTEGRATED WITHIN REACT VIEW
+        // =====================================================================
+        function Interactive2DMap({ showHeatmap, showArrows, showEvac, pedestrians, onCameraClick }) {
+            const canvasRef = useRef(null);
+
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+
+                // Clear boundaries
+                ctx.fillStyle = '#030509';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Draw walkway paths
+                ctx.strokeStyle = '#12182c';
+                ctx.lineWidth = 42;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.beginPath();
+                ctx.moveTo(50, 150);
+                ctx.lineTo(550, 150);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(300, 30);
+                ctx.lineTo(300, 270);
+                ctx.stroke();
+
+                // Draw restricted zone bounding box
+                ctx.fillStyle = 'rgba(255, 42, 84, 0.04)';
+                ctx.fillRect(50, 30, 160, 80);
+                ctx.strokeStyle = 'rgba(255, 42, 84, 0.2)';
+                ctx.strokeRect(50, 30, 160, 80);
+                ctx.fillStyle = 'var(--status-red)';
+                ctx.font = 'bold 8px "JetBrains Mono"';
+                ctx.fillText("RESTRICTED ESCALATORS ZONE B", 58, 44);
+
+                // Draw Entry / Exit gates
+                const drawGate = (x, y, name, type) => {
+                    ctx.fillStyle = '#0b0f1e';
+                    ctx.strokeStyle = type === 'IN' ? 'var(--status-green)' : 'var(--status-red)';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 12, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.fillStyle = type === 'IN' ? 'var(--status-green)' : 'var(--status-red)';
+                    ctx.font = 'bold 8px "Inter"';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(type, x, y + 3);
+                };
+
+                drawGate(50, 150, "GATE_A", "IN");
+                drawGate(300, 30, "GATE_B", "IN");
+                drawGate(550, 150, "EXIT_A", "OUT");
+                drawGate(300, 270, "EXIT_B", "OUT");
+
+                // Draw Heatmap block
+                if (showHeatmap) {
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'screen';
+                    pedestrians.forEach(p => {
+                        const gradient = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 30);
+                        gradient.addColorStop(0, 'rgba(255, 42, 84, 0.35)');
+                        gradient.addColorStop(0.3, 'rgba(255, 179, 0, 0.15)');
+                        gradient.addColorStop(1, 'rgba(3, 5, 9, 0)');
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, 30, 0, Math.PI * 2);
+                        ctx.fill();
+                    });
+                    ctx.restore();
+                }
+
+                // Draw Evacuation dashed routes
+                if (showEvac) {
+                    ctx.strokeStyle = 'var(--status-green)';
+                    ctx.lineWidth = 3;
+                    ctx.setLineDash([6, 8]);
+                    ctx.lineDashOffset = -(Date.now() / 40) % 14;
+                    ctx.beginPath();
+                    ctx.moveTo(300, 150);
+                    ctx.lineTo(550, 150);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                // Draw Flow Arrows
+                if (showArrows) {
+                    ctx.strokeStyle = 'rgba(0, 229, 255, 0.4)';
+                    ctx.lineWidth = 1.2;
+                    pedestrians.forEach(p => {
+                        ctx.beginPath();
+                        ctx.moveTo(p.x, p.y);
+                        ctx.lineTo(p.x + p.vx * 6, p.y + p.vy * 6);
+                        ctx.stroke();
+                    });
+                }
+
+                // Draw Pedestrians
+                pedestrians.forEach(p => {
+                    ctx.fillStyle = 'var(--accent-cyan)';
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+
+                // Draw camera nodes
+                const drawCamera = (x, y, name) => {
+                    ctx.fillStyle = '#0b0f1e';
+                    ctx.strokeStyle = 'var(--accent-blue)';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.fillStyle = 'var(--accent-cyan)';
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = 'white';
+                    ctx.font = '8px "JetBrains Mono"';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(name, x, y - 12);
+                };
+
+                drawCamera(300, 150, "CAM_21");
+                drawCamera(150, 150, "CAM_12");
+                drawCamera(450, 150, "CAM_15");
+
+            }, [showHeatmap, showArrows, showEvac, pedestrians]);
+
+            const handleCanvasClick = (e) => {
+                if (!onCameraClick) return;
+                const canvas = canvasRef.current;
+                const rect = canvas.getBoundingClientRect();
+                const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
+                const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+                // Camera Node click coordinates checks
+                const nodes = [
+                    { id: "CAM_21", x: 300, y: 150 },
+                    { id: "CAM_12", ...{ x: 150, y: 150 } },
+                    { id: "CAM_15", x: 450, y: 150 }
+                ];
+
+                nodes.forEach(n => {
+                    const dist = Math.sqrt((clickX - n.x) ** 2 + (clickY - n.y) ** 2);
+                    if (dist < 12) {
+                        onCameraClick(n.id);
+                    }
+                });
+            };
+
+            return (
+                <canvas
+                    ref={canvasRef}
+                    width="600"
+                    height="300"
+                    onClick={handleCanvasClick}
+                    class="block w-full h-full max-w-full max-h-full map-bg-grid cursor-pointer"
+                />
+            );
+        }
+
+        // Camera Create Form inside settings
+        function CameraForm({ onSubmit }) {
+            const [name, setName] = useState("");
+            const [zone, setZone] = useState("Zone A");
+            const [lat, setLat] = useState("");
+            const [lng, setLng] = useState("");
+            const [ip, setIp] = useState("");
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSubmit({ name, zone, lat: parseFloat(lat), lng: parseFloat(lng), ip });
+                setName("");
+                setLat("");
+                setLng("");
+                setIp("");
+            };
+
+            return (
+                <form onSubmit={handleSubmit} class="flex flex-col gap-4 text-xs font-semibold">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-textMuted uppercase font-bold tracking-wider">Camera Name</label>
+                        <input type="text" value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. Main Entrance HallWAY" class="bg-bgPrimary border border-borderBlue rounded p-2.5 text-textPrimary outline-none focus:border-accentCyan" />
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-textMuted uppercase font-bold tracking-wider">Latitude</label>
+                            <input type="number" step="0.0001" value={lat} onChange={(e) => setLat(e.target.value)} required placeholder="37.7749" class="bg-bgPrimary border border-borderBlue rounded p-2.5 text-textPrimary outline-none focus:border-accentCyan" />
+                        </div>
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-textMuted uppercase font-bold tracking-wider">Longitude</label>
+                            <input type="number" step="0.0001" value={lng} onChange={(e) => setLng(e.target.value)} required placeholder="-122.4194" class="bg-bgPrimary border border-borderBlue rounded p-2.5 text-textPrimary outline-none focus:border-accentCyan" />
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-textMuted uppercase font-bold tracking-wider">RTSP IP Stream endpoint</label>
+                        <input type="text" value={ip} onChange={(e) => setIp(e.target.value)} required placeholder="rtsp://10.0.1.55/stream1" class="bg-bgPrimary border border-borderBlue rounded p-2.5 text-textPrimary outline-none focus:border-accentCyan" />
+                    </div>
+                    <button type="submit" class="bg-accentBlue text-white py-3 rounded font-bold hover:shadow-[0_0_8px_rgba(0,102,255,0.4)] transition-all">Submit Camera Node</button>
+                </form>
+            );
+        }
+
+        // Dummy pedestrian coordinate generators
+        function mockPedestrians(density) {
+            const count = Math.floor(density * 7);
+            const list = [];
+            for (let i = 0; i < count; i++) {
+                // Generates random dots around corridor zones
+                const headingAngle = Math.random() * Math.PI * 2;
+                list.push({
+                    id: i,
+                    x: 100 + Math.random() * 400,
+                    y: 100 + Math.random() * 100,
+                    vx: Math.cos(headingAngle),
+                    vy: Math.sin(headingAngle)
+                });
+            }
+            return list;
+        }
+
+        // Render React components to DOM root
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>

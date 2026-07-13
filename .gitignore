@@ -1,0 +1,52 @@
+# ============================================================
+# NEXORA .gitignore
+# ============================================================
+
+# --- Environment / secrets (NEVER commit) ---
+.env
+*.env
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- Virtual environments ---
+.venv/
+venv/
+ENV/
+
+# --- Testing / coverage ---
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+security_audit.log
+
+# --- ML model artifacts ---
+*.joblib
+*.pkl
+
+# --- Report output ---
+reports_output/*.csv
+reports_output/*.html
+reports_output/*.pdf
