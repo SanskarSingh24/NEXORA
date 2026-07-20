@@ -68,7 +68,7 @@ export default function ReportsPage() {
         try {
             const token = localStorage.getItem('nexora_token');
             // Requesting the report compile from unified gateway (port 8000)
-            const response = await fetch(`http://localhost:8000/api/reports/generate`, {
+            const response = await fetch(`http://localhost:8000/reports/generate`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -269,8 +269,8 @@ export default function ReportsPage() {
                                                 <td className="py-2.5 px-3 text-slate-350 print:text-slate-700">{t.peakCount}</td>
                                                 <td className="py-2.5 px-3 font-bold">
                                                     <span className={`px-2 py-0.5 rounded text-[10px] ${t.status === 'HEAVY' ? 'bg-statusRed/10 text-statusRed' :
-                                                            t.status === 'MODERATE' ? 'bg-statusYellow/10 text-statusYellow' :
-                                                                'bg-statusGreen/10 text-statusGreen'
+                                                        t.status === 'MODERATE' ? 'bg-statusYellow/10 text-statusYellow' :
+                                                            'bg-statusGreen/10 text-statusGreen'
                                                         }`}>
                                                         {t.status}
                                                     </span>

@@ -29,7 +29,7 @@ export default function CrowdMapPage() {
     const [selectedCam, setSelectedCam] = useState(null);
 
     const token = localStorage.getItem('nexora_token');
-    const { status: socketStatus, data: wsData } = useWebSocket('ws://localhost:8000/api/map/ws/map', token);
+    const { status: socketStatus, data: wsData } = useWebSocket('ws://localhost:8000/ws/map', token);
 
     const crowdCount = wsData?.crowd_count ?? pedestriansRef.current.length;
     const riskLevel = wsData?.risk?.level ?? wsData?.risk_level ?? "LOW";
@@ -443,8 +443,8 @@ export default function CrowdMapPage() {
                         <button
                             onClick={() => setShowHeatmap(!showHeatmap)}
                             className={`w-full flex justify-between items-center p-3 rounded-lg border text-xs font-bold uppercase tracking-wider transition-all ${showHeatmap
-                                    ? 'bg-slate-900 border-accentCyan text-accentCyan shadow-[0_0_8px_rgba(0,229,255,0.1)]'
-                                    : 'bg-bgSecondary/30 border-panelBorder text-textMuted hover:border-slate-800'
+                                ? 'bg-slate-900 border-accentCyan text-accentCyan shadow-[0_0_8px_rgba(0,229,255,0.1)]'
+                                : 'bg-bgSecondary/30 border-panelBorder text-textMuted hover:border-slate-800'
                                 }`}
                         >
                             <span>Heatmap density</span>
@@ -454,8 +454,8 @@ export default function CrowdMapPage() {
                         <button
                             onClick={() => setShowArrows(!showArrows)}
                             className={`w-full flex justify-between items-center p-3 rounded-lg border text-xs font-bold uppercase tracking-wider transition-all ${showArrows
-                                    ? 'bg-slate-900 border-accentCyan text-accentCyan shadow-[0_0_8px_rgba(0,229,255,0.1)]'
-                                    : 'bg-bgSecondary/30 border-panelBorder text-textMuted hover:border-slate-800'
+                                ? 'bg-slate-900 border-accentCyan text-accentCyan shadow-[0_0_8px_rgba(0,229,255,0.1)]'
+                                : 'bg-bgSecondary/30 border-panelBorder text-textMuted hover:border-slate-800'
                                 }`}
                         >
                             <span>Directional vectors</span>
@@ -465,8 +465,8 @@ export default function CrowdMapPage() {
                         <button
                             onClick={() => setShowEvac(!showEvac)}
                             className={`w-full flex justify-between items-center p-3 rounded-lg border text-xs font-bold uppercase tracking-wider transition-all ${showEvac
-                                    ? 'bg-slate-900 border-accentCyan text-accentCyan shadow-[0_0_8px_rgba(0,229,255,0.1)]'
-                                    : 'bg-bgSecondary/30 border-panelBorder text-textMuted hover:border-slate-800'
+                                ? 'bg-slate-900 border-accentCyan text-accentCyan shadow-[0_0_8px_rgba(0,229,255,0.1)]'
+                                : 'bg-bgSecondary/30 border-panelBorder text-textMuted hover:border-slate-800'
                                 }`}
                         >
                             <span>Evacuation paths</span>

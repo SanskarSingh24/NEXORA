@@ -106,7 +106,7 @@ export default function DashboardPage() {
 
     const token = localStorage.getItem('nexora_token');
     // Connect to the WebSocket on the unified backend gateway (port 8000)
-    const { status: socketStatus, data: wsData } = useWebSocket('ws://localhost:8000/api/map/ws/map', token);
+    const { status: socketStatus, data: wsData } = useWebSocket('ws://localhost:8000/ws/map', token);
 
     // Read message data with local mock fallbacks if websocket disconnected
     const crowdCount = wsData?.crowd_count ?? 118;
@@ -157,9 +157,9 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex items-center gap-3 bg-bgPrimary/70 px-4 py-1.5 rounded-full border border-panelBorder">
                     <span className={`w-2.5 h-2.5 rounded-full ${socketStatus === 'Connected' ? 'bg-statusGreen shadow-[0_0_8px_#10b981]' :
-                            socketStatus === 'Reconnecting' ? 'bg-statusOrange shadow-[0_0_8px_#f97316]' :
-                                socketStatus === 'Connecting' ? 'bg-statusYellow shadow-[0_0_8px_#f59e0b]' :
-                                    'bg-statusRed shadow-[0_0_8px_#ef4444]'
+                        socketStatus === 'Reconnecting' ? 'bg-statusOrange shadow-[0_0_8px_#f97316]' :
+                            socketStatus === 'Connecting' ? 'bg-statusYellow shadow-[0_0_8px_#f59e0b]' :
+                                'bg-statusRed shadow-[0_0_8px_#ef4444]'
                         }`}></span>
                     <span className="text-xs font-bold font-mono tracking-wider">
                         SYSTEM_WS: {socketStatus.toUpperCase()}
@@ -229,8 +229,8 @@ export default function DashboardPage() {
                                     key={cam.id}
                                     onClick={() => setSelectedCamStream(cam.id)}
                                     className={`flex justify-between items-center p-3 rounded-lg border text-sm font-semibold transition-all ${selectedCamStream === cam.id
-                                            ? 'bg-slate-900 border-accentCyan text-white shadow-[0_0_8px_rgba(0,229,255,0.15)]'
-                                            : 'bg-bgSecondary/30 border-panelBorder text-textMuted hover:border-slate-700 hover:text-white'
+                                        ? 'bg-slate-900 border-accentCyan text-white shadow-[0_0_8px_rgba(0,229,255,0.15)]'
+                                        : 'bg-bgSecondary/30 border-panelBorder text-textMuted hover:border-slate-700 hover:text-white'
                                         }`}
                                 >
                                     <div className="flex items-center gap-2">
@@ -277,10 +277,10 @@ export default function DashboardPage() {
                                 <div
                                     key={alert.id}
                                     className={`p-3 rounded-lg border text-xs flex flex-col gap-2 transition-all ${alert.acknowledged
-                                            ? 'bg-bgSecondary/10 border-panelBorder opacity-60'
-                                            : alert.level === 'RED'
-                                                ? 'bg-statusRed/5 border-statusRed/40 shadow-[0_0_8px_rgba(239,68,68,0.05)]'
-                                                : 'bg-statusYellow/5 border-statusYellow/40'
+                                        ? 'bg-bgSecondary/10 border-panelBorder opacity-60'
+                                        : alert.level === 'RED'
+                                            ? 'bg-statusRed/5 border-statusRed/40 shadow-[0_0_8px_rgba(239,68,68,0.05)]'
+                                            : 'bg-statusYellow/5 border-statusYellow/40'
                                         }`}
                                 >
                                     <div className="flex justify-between items-center">

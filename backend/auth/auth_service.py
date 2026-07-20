@@ -122,6 +122,54 @@ USER_DB: Dict[str, dict] = {}
 REFRESH_TOKEN_STORE: Dict[str, str] = {}  # refresh_token -> user_id
 TOKEN_BLACKLIST: Set[str] = set()
 
+# ─── Seed a default admin account for development / demo ────────────────────
+# Credentials: username=admin  password=StrongPass1
+# These match the pre-filled values in react_dashboard.html.
+def _seed_default_users() -> None:
+    from uuid import uuid4
+    from datetime import datetime, timezone
+    _ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    _users = [
+        {
+            "email": "admin@nexora.com",
+            "username": "admin",
+            "password": "StrongPass1",
+            "role": "ADMIN",
+        },
+        {
+            "email": "admin@nexora.local",
+            "username": "admin",
+            "password": "StrongPass1",
+            "role": "ADMIN",
+        },
+        {
+            "email": "operator@nexora.com",
+            "username": "operator",
+            "password": "StrongPass1",
+            "role": "SECURITY_OFFICER",
+        },
+        {
+            "email": "operator@nexora.local",
+            "username": "operator",
+            "password": "StrongPass1",
+            "role": "SECURITY_OFFICER",
+        },
+    ]
+    for u in _users:
+        if u["email"] not in USER_DB:
+            USER_DB[u["email"]] = {
+                "user_id": uuid4(),
+                "username": u["username"],
+                "email": u["email"],
+                "password_hash": _ctx.hash(u["password"]),
+                "role": u["role"],
+                "is_active": True,
+                "created_at": datetime.now(timezone.utc),
+            }
+
+_seed_default_users()
+# ────────────────────────────────────────────────────────────────────────────
+
 # =====================================================================
 # 3. CRYPTOGRAPHY & UTILITIES
 # =====================================================================

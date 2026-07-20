@@ -136,17 +136,17 @@
             { id: "AL-1906", camera: "CAM-01", zone: "Main Entrance Gateway", level: "YELLOW", message: "Moderate occupancy surge detected during incoming train arrival.", confidence: 84.5, time: "18 mins ago", acknowledged: true }
         ];
 
-        const API_BASE = 'http://localhost:8001';
+        const API_BASE = 'http://localhost:8000';
         const AUTH_STORAGE_KEYS = {
             accessToken: 'nexora.accessToken',
             refreshToken: 'nexora.refreshToken'
         };
 
         const defaultSocketUrl = (() => {
-            if (typeof window === 'undefined' || !window.location) return 'ws://localhost:8001/ws/map';
+            if (typeof window === 'undefined' || !window.location) return 'ws://localhost:8000/ws/map';
             const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
             const host = window.location.hostname || 'localhost';
-            return `${protocol}://${host}:8001/ws/map`;
+            return `${protocol}://${host}:8000/ws/map`;
         })();
 
         function readStoredAuth() {
@@ -452,7 +452,7 @@
 
             const { status: socketStatus, lastMessage: liveTelemetry } = useReconnectingWebSocket(socketUrl, {
                 enabled: authStatus === 'ready' && Boolean(socketUrl),
-                onMessage: () => {},
+                onMessage: () => { },
                 onAuthError: (payload) => {
                     if (payload?.error === 'TOKEN_EXPIRED' || payload?.message?.toLowerCase().includes('expired')) {
                         clearStoredAuth();
@@ -1166,8 +1166,8 @@
                                                             <td class="py-3 px-4 text-xs">{inc.zone}</td>
                                                             <td class="py-3 px-4">
                                                                 <span class={`px-2 py-0.5 rounded text-[10px] font-bold ${inc.level === 'CRITICAL' ? 'bg-statusRed/10 text-statusRed border border-statusRed' :
-                                                                        inc.level === 'HIGH' ? 'bg-statusOrange/10 text-statusOrange border border-statusOrange' :
-                                                                            'bg-statusYellow/10 text-statusYellow border border-statusYellow'}`}>
+                                                                    inc.level === 'HIGH' ? 'bg-statusOrange/10 text-statusOrange border border-statusOrange' :
+                                                                        'bg-statusYellow/10 text-statusYellow border border-statusYellow'}`}>
                                                                     {inc.level}
                                                                 </span>
                                                             </td>
