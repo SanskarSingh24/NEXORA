@@ -50,3 +50,7 @@ security_audit.log
 reports_output/*.csv
 reports_output/*.html
 reports_output/*.pdf
+
+# --- Node ---
+node_modules/
+frontend/node_modules/
