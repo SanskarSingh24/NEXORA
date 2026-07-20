@@ -11,8 +11,8 @@ from enum import Enum
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, DateTime, Boolean, create_engine, Index
-from sqlalchemy.dialects.postgresql import ARRAY, UUID as PG_UUID
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, DateTime, Boolean, JSON, create_engine, Index
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, sessionmaker
 from contextlib import contextmanager
@@ -56,7 +56,7 @@ class AlertRecord(Base):
     risk_level = Column(String(16), nullable=False)  # GREEN, YELLOW, ORANGE, RED
     confidence_pct = Column(Float, nullable=False)
     explanation = Column(String(512), nullable=True)
-    recommendations = Column(ARRAY(String), nullable=True)  # List of recommended actions
+    recommendations = Column(JSON, nullable=True)  # List of recommended actions (JSON array)
     is_acknowledged = Column(Boolean, default=False, nullable=False, index=True)
     acknowledged_at = Column(DateTime(timezone=True), nullable=True)
     operator_id = Column(String(64), nullable=True)

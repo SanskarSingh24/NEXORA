@@ -16,8 +16,8 @@ import numpy as np
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, HttpUrl
-from sqlalchemy import Column, Float, String, create_engine
-from sqlalchemy.dialects.postgresql import ARRAY, UUID as PG_UUID
+from sqlalchemy import Column, Float, JSON, String, create_engine
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -56,7 +56,7 @@ class CameraModel(Base):
     zone_id = Column(String(64), nullable=False, index=True)                   # Indexed for spatial searches
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
-    homography_matrix = Column(ARRAY(Float), nullable=False)  # 1D flattened 3x3 matrix representation
+    homography_matrix = Column(JSON, nullable=False)  # 1D flattened 3x3 matrix (JSON array of floats)
 
 
 # Create the schema tables (Run migrations/initialization on startup)

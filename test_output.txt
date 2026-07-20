@@ -1,0 +1,125 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\baghe\OneDrive\Desktop\NEXORA
+configfile: pytest.ini
+plugins: anyio-4.14.1
+collected 22 items
+
+tests\test_alerts.py .                                                   [  4%]
+tests\test_analytics.py .F.                                              [ 18%]
+tests\test_auth.py .FF                                                   [ 31%]
+tests\test_map_server.py ..........                                      [ 77%]
+tests\test_predictive.py ....                                            [ 95%]
+tests\test_reports_api.py .                                              [100%]
+
+================================== FAILURES ===================================
+_____________________ test_save_raw_telemetry_transforms ______________________
+tests\test_analytics.py:55: in test_save_raw_telemetry_transforms
+    assert record.movement_direction == "NE"
+E   AssertionError: assert 'SE' == 'NE'
+E     
+E     - NE
+E     + SE
+---------------------------- Captured stdout call -----------------------------
+PostgreSQL connection skipped or unavailable: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 5432 failed: Connection refused (0x0000274D/10061)
+	Is the server running on that host and accepting TCP/IP connections?
+connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused (0x0000274D/10061)
+	Is the server running on that host and accepting TCP/IP connections?
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8). Running with mock engine fallbacks.
+_____________________ test_token_rotation_and_logout_flow _____________________
+tests\test_auth.py:58: in test_token_rotation_and_logout_flow
+    assert new_tokens["access_token"] != acc_token
+E   AssertionError: assert 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0Yzk1MzI4OS0xOGU5LTQ1N2UtOTJiYi1hMDdlMThmZjdmN2MiLCJyb2xlIjoiQURNSU4iLCJleHAiOjE3ODM5MzQ0MjN9.Roj8B9h4zCMNRvKWV1pYJ6QmGpFozfL1tFwUVq0GFCQ' != 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0Yzk1MzI4OS0xOGU5LTQ1N2UtOTJiYi1hMDdlMThmZjdmN2MiLCJyb2xlIjoiQURNSU4iLCJleHAiOjE3ODM5MzQ0MjN9.Roj8B9h4zCMNRvKWV1pYJ6QmGpFozfL1tFwUVq0GFCQ'
+---------------------------- Captured stderr call -----------------------------
+2026-07-13 14:35:23,496 [INFO] [AUDIT] Audit Trail: Registration request received for: rot@nexora.io
+2026-07-13 14:35:23,699 [INFO] [AUDIT] Audit Trail: Registration SUCCESS for ID: 4c953289-18e9-457e-92bb-a07e18ff7f7c (rot@nexora.io)
+2026-07-13 14:35:23,700 [INFO] [AUDIT] HTTP Request: POST http://testserver/auth/register "HTTP/1.1 201 Created"
+2026-07-13 14:35:23,703 [INFO] [AUDIT] Audit Trail: Login attempt initiated for: rot@nexora.io
+2026-07-13 14:35:23,906 [INFO] [AUDIT] Audit Trail: Login SUCCESS for user ID: 4c953289-18e9-457e-92bb-a07e18ff7f7c (rot@nexora.io)
+2026-07-13 14:35:23,908 [INFO] [AUDIT] HTTP Request: POST http://testserver/auth/login?username_email=rot@nexora.io&password_raw=safePassword1! "HTTP/1.1 200 OK"
+2026-07-13 14:35:23,912 [INFO] [AUDIT] Audit Trail: Token refresh rotation requested.
+2026-07-13 14:35:23,913 [INFO] [AUDIT] HTTP Request: POST http://testserver/auth/token/refresh "HTTP/1.1 200 OK"
+------------------------------ Captured log call ------------------------------
+INFO     NEXORA_SECURITY:auth_service.py:413 Audit Trail: Registration request received for: rot@nexora.io
+INFO     NEXORA_SECURITY:auth_service.py:432 Audit Trail: Registration SUCCESS for ID: 4c953289-18e9-457e-92bb-a07e18ff7f7c (rot@nexora.io)
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/auth/register "HTTP/1.1 201 Created"
+INFO     NEXORA_SECURITY:auth_service.py:439 Audit Trail: Login attempt initiated for: rot@nexora.io
+INFO     NEXORA_SECURITY:auth_service.py:481 Audit Trail: Login SUCCESS for user ID: 4c953289-18e9-457e-92bb-a07e18ff7f7c (rot@nexora.io)
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/auth/login?username_email=rot@nexora.io&password_raw=safePassword1! "HTTP/1.1 200 OK"
+INFO     NEXORA_SECURITY:auth_service.py:494 Audit Trail: Token refresh rotation requested.
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/auth/token/refresh "HTTP/1.1 200 OK"
+_________________________ test_rbac_clearance_levels __________________________
+tests\test_auth.py:85: in test_rbac_clearance_levels
+    tokens_by_role[user_info["role"]] = tok["access_token"]
+                                        ^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'access_token'
+---------------------------- Captured stderr call -----------------------------
+2026-07-13 14:35:23,926 [INFO] [AUDIT] HTTP Request: POST http://testserver/auth/register "HTTP/1.1 422 Unprocessable Entity"
+2026-07-13 14:35:23,929 [INFO] [AUDIT] Audit Trail: Login attempt initiated for: admin@nexora.io
+2026-07-13 14:35:23,929 [WARNING] [AUDIT] Audit Trail: Login FAILED (Invalid credentials) for: admin@nexora.io
+2026-07-13 14:35:23,930 [INFO] [AUDIT] HTTP Request: POST http://testserver/auth/login?username_email=admin@nexora.io&password_raw=pass12345 "HTTP/1.1 401 Unauthorized"
+------------------------------ Captured log call ------------------------------
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/auth/register "HTTP/1.1 422 Unprocessable Entity"
+INFO     NEXORA_SECURITY:auth_service.py:439 Audit Trail: Login attempt initiated for: admin@nexora.io
+WARNING  NEXORA_SECURITY:auth_service.py:449 Audit Trail: Login FAILED (Invalid credentials) for: admin@nexora.io
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/auth/login?username_email=admin@nexora.io&password_raw=pass12345 "HTTP/1.1 401 Unauthorized"
+============================== warnings summary ===============================
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\baghe\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+backend\auth\auth_service.py:74
+  C:\Users\baghe\OneDrive\Desktop\NEXORA\backend\auth\auth_service.py:74: PydanticDeprecatedSince20: Pydantic V1 style `@validator` validators are deprecated. You should migrate to Pydantic V2 style `@field_validator` validators, see the migration guide for more details. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    @validator("username")
+
+backend\auth\auth_service.py:82
+  C:\Users\baghe\OneDrive\Desktop\NEXORA\backend\auth\auth_service.py:82: PydanticDeprecatedSince20: Pydantic V1 style `@validator` validators are deprecated. You should migrate to Pydantic V2 style `@field_validator` validators, see the migration guide for more details. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    @validator("password")
+
+backend\auth\auth_service.py:89
+  C:\Users\baghe\OneDrive\Desktop\NEXORA\backend\auth\auth_service.py:89: PydanticDeprecatedSince20: Pydantic V1 style `@validator` validators are deprecated. You should migrate to Pydantic V2 style `@field_validator` validators, see the migration guide for more details. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    @validator("email")
+
+backend\alerts\alert_service.py:37
+  C:\Users\baghe\OneDrive\Desktop\NEXORA\backend\alerts\alert_service.py:37: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    Base = declarative_base()
+
+backend\analytics\analytics_service.py:40
+  C:\Users\baghe\OneDrive\Desktop\NEXORA\backend\analytics\analytics_service.py:40: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    Base = declarative_base()
+
+backend\map\map_server.py:213
+  C:\Users\baghe\OneDrive\Desktop\NEXORA\backend\map\map_server.py:213: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\applications.py:4675
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\applications.py:4675
+  C:\Users\baghe\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\applications.py:4675: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+backend\ai\predictive_engine.py:198
+  C:\Users\baghe\OneDrive\Desktop\NEXORA\backend\ai\predictive_engine.py:198: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_analytics.py::test_save_raw_telemetry_transforms - Assertio...
+FAILED tests/test_auth.py::test_token_rotation_and_logout_flow - AssertionErr...
+FAILED tests/test_auth.py::test_rbac_clearance_levels - KeyError: 'access_token'
+================= 3 failed, 19 passed, 10 warnings in 17.87s ==================

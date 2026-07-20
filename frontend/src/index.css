@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #05070f;
+  color: #e2e8f0;
+  font-family: 'Inter', sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+/* Custom scrollbar for command center */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0b0f1e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e294b;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00e5ff;
+}
+
+/* Base cyber-grid canvas background styling if desired */
+.cyber-grid {
+  background-image:
+    linear-gradient(rgba(30, 41, 75, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 41, 75, 0.1) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
