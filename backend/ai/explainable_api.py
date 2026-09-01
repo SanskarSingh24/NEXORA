@@ -187,25 +187,26 @@ class ShapExplainabilityManager:
                 risk_labels = ["SAFE", "MODERATE", "HIGH", "CRITICAL"]
                 risk_label = risk_labels[class_id]
 
-                # Compute SHAP values for the current input
-                shap_values = self.explainer.shap_values(input_vector)
-                
-                # Check shape matrix dimensions: multiclass SHAP returns a list of arrays [classes, samples, features]
-                if isinstance(shap_values, list):
-                    # Multiclass TreeExplainer list output
-                    class_shap = shap_values[class_id][0]
-                    base_val = float(self.explainer.expected_value[class_id])
-                else:
-                    # Binary or single matrix outputs
-                    if len(shap_values.shape) == 3:  # [samples, features, classes] shape format
-                        class_shap = shap_values[0, :, class_id]
+                # Performance Optimization: Compute expensive SHAP values ONLY for HIGH & CRITICAL risk frames
+                if risk_label in ["HIGH", "CRITICAL"]:
+                    shap_values = self.explainer.shap_values(input_vector)
+                    if isinstance(shap_values, list):
+                        class_shap = shap_values[class_id][0]
                         base_val = float(self.explainer.expected_value[class_id])
                     else:
-                        class_shap = shap_values[0]
-                        base_val = float(self.explainer.expected_value)
+                        if len(shap_values.shape) == 3:
+                            class_shap = shap_values[0, :, class_id]
+                            base_val = float(self.explainer.expected_value[class_id])
+                        else:
+                            class_shap = shap_values[0]
+                            base_val = float(self.explainer.expected_value)
 
-                # Map SHAP values to feature names
-                contributions = {self.feature_names[i]: float(class_shap[i]) for i in range(len(self.feature_names))}
+                    contributions = {self.feature_names[i]: float(class_shap[i]) for i in range(len(self.feature_names))}
+                else:
+                    # Fast baseline attribution for SAFE and MODERATE frames — 0ms latency impact
+                    base_val = 0.0
+                    importances = getattr(self.model, "feature_importances_", [0.14] * 7)
+                    contributions = {self.feature_names[i]: round(float(importances[i]), 3) for i in range(len(self.feature_names))}
                 
                 # Rank features by absolute impact
                 sorted_features = sorted(self.feature_names, key=lambda f: abs(contributions[f]), reverse=True)
@@ -289,6 +290,7 @@ app = FastAPI(title="NEXORA Explainable AI microservice", version="1.0.0")
 xai_manager = ShapExplainabilityManager()
 
 @app.post("/xai/explain", response_model=XAIExplanationOutput)
+@app.post("/api/xai/explain", response_model=XAIExplanationOutput)
 def get_prediction_explanation(payload: PredictionInput):
     """
     Computes active SHAP value contributions and outlines natural language reasons

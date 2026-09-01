@@ -17,6 +17,10 @@ from typing import List, Optional, Set
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 
 from backend.auth.auth_service import authenticate_websocket_token
+from backend.vision.vision_engine import get_live_telemetry_snapshot
+from backend.ai.predictive_engine import predict_risk_from_metrics
+from backend.ai.explainable_api import xai_manager, PredictionInput
+from backend.alerts.alert_service import alert_service_instance
 
 logger = logging.getLogger("NEXORA_MAP_SERVER")
 
@@ -41,10 +45,10 @@ active_connections: Set[WebSocket] = set()
 
 CAMERA_IDS = ["CAM-01", "CAM-02", "CAM-03", "CAM-04", "CAM-05"]
 HEATMAP_CELLS = [
-    {"x": 120, "y": 140, "weight": 0.6},
-    {"x": 280, "y": 180, "weight": 0.9},
-    {"x": 520, "y": 220, "weight": 0.7},
-    {"x": 370, "y": 320, "weight": 0.8},
+    {"x": 160, "y": 175, "weight": 0.6},   # West corridor cluster
+    {"x": 373, "y": 225, "weight": 0.9},   # Central concourse (high density)
+    {"x": 693, "y": 275, "weight": 0.7},   # East corridor cluster
+    {"x": 493, "y": 400, "weight": 0.8},   # South hub cluster
 ]
 
 # =====================================================================
@@ -55,13 +59,12 @@ class PedestrianSimulator:
     def __init__(self, count: int = 40):
         self.count = count
         self.pedestrians = []
-        
-        # Spatial paths config: (x, y) coordinates of paths
-        # Hallways intersection routes
-        self.entry_gates = [(40, 200), (300, 30)]
-        self.exit_gates = [(560, 200), (300, 370)]
-        self.restricted_bounds = {"x_min": 40, "x_max": 180, "y_min": 40, "y_max": 140}
-        
+
+        # Canvas is 800x500. Entry gates on left/top edges, exit gates on right/bottom.
+        self.entry_gates = [(50, 250), (400, 40)]
+        self.exit_gates = [(750, 250), (400, 460)]
+        self.restricted_bounds = {"x_min": 50, "x_max": 240, "y_min": 50, "y_max": 175}
+
         self.init_pedestrians()
 
     def is_inside_restricted(self, x: float, y: float) -> bool:
@@ -138,10 +141,153 @@ async def deliver_payload_concurrently(message: str):
             active_connections.discard(client)
             print(f"WS Registry: Auto-pruned dead connection {getattr(client, 'client', 'unknown')} due to send failure: {res}")
 
+def _resolve_zone_from_pedestrians(pedestrians: list) -> str:
+    """
+    Infers which spatial zone has the highest pedestrian concentration
+    by mapping average pedestrian centroid to named venue areas.
+    Canvas space is 800x500. Zone grid:
+      - x < 200           → West Entrance
+      - x > 600           → East Corridor
+      - y < 130           → North Gate
+      - y > 380           → South Gate
+      - otherwise         → Central Concourse
+    """
+    if not pedestrians:
+        return "Central Concourse"
+
+    avg_x = sum(p["x"] for p in pedestrians) / len(pedestrians)
+    avg_y = sum(p["y"] for p in pedestrians) / len(pedestrians)
+
+    if avg_y < 130:
+        return "North Gate"
+    elif avg_y > 380:
+        return "South Gate"
+    elif avg_x < 200:
+        return "West Entrance"
+    elif avg_x > 600:
+        return "East Corridor"
+    else:
+        return "Central Concourse"
+
+
 def build_payload() -> dict:
+    snapshot = get_live_telemetry_snapshot()
+
+    if snapshot["is_live"]:
+        # ------------------------------------------------------------------
+        # LIVE DATA PATH: Real-time YOLOv8 + ByteTrack vision telemetry
+        # ------------------------------------------------------------------
+        crowd_count = snapshot["crowd_count"]
+        density = snapshot["density"]
+        avg_speed = snapshot["avg_speed"]
+        heatmap = snapshot["heatmap"]
+        entry_rate = snapshot.get("entry_rate", 0.0)
+        exit_rate = snapshot.get("exit_rate", 0.0)
+        flow_angle = snapshot.get("flow_angle", 0.0)
+        queue_length = snapshot.get("queue_length", 0)
+        occupancy = round(min(150.0, (crowd_count / 80.0) * 100.0), 1)
+
+        pedestrians = [
+            {
+                "id": p["id"],
+                "x": p["x"],
+                "y": p["y"],
+                "color": p.get("color", "cyan"),
+            } for p in snapshot["pedestrians"]
+        ]
+
+        # Dynamically resolve the highest-density zone from live pedestrian positions
+        active_zone = _resolve_zone_from_pedestrians(pedestrians)
+
+        # Calculate live risk using XGBoost / ML engine
+        risk_level, risk_score, confidence = predict_risk_from_metrics(
+            density=density,
+            speed=avg_speed,
+            entry_rate=entry_rate,
+            exit_rate=exit_rate,
+            flow_angle=flow_angle,
+            queue_length=queue_length,
+            occupancy=occupancy,
+        )
+
+        # Compute SHAP explanation using XAI Manager from live telemetry input
+        inp = PredictionInput(
+            density=density,
+            speed=avg_speed,
+            entry_rate=entry_rate,
+            exit_rate=exit_rate,
+            flow_direction_angle=flow_angle,
+            queue_length=queue_length,
+            occupancy=occupancy,
+        )
+        xai_res = xai_manager.explain(inp)
+
+        alerts = alert_service_instance.evaluate_live_telemetry_alerts()
+
+        cameras = []
+        for idx, camera_id in enumerate(CAMERA_IDS):
+            cameras.append({
+                "id": camera_id,
+                "x": 120 + idx * 150,
+                "y": 90 + (idx % 2) * 120,
+                "status": "ACTIVE",
+                "latency_ms": 18,
+                "fps": 25,
+            })
+
+        conf_pct = round(confidence * 100 if confidence <= 1.0 else confidence, 1)
+
+        return {
+            "timestamp": time.time(),
+            "is_live_vision": True,
+            "pedestrians": pedestrians,
+            "crowd_count": crowd_count,
+            "density": density,
+            "avg_speed": round(avg_speed, 2),
+            "entry_rate": round(entry_rate, 1),
+            "exit_rate": round(exit_rate, 1),
+            "flow_angle": round(flow_angle, 1),
+            "queue_length": queue_length,
+            "occupancy": occupancy,
+            "heatmap": heatmap,
+            "risk_level": risk_level,
+            "risk_score": risk_score,
+            "confidence": conf_pct,
+            "risk": {
+                "level": risk_level,
+                "score": risk_score,
+                "confidence": conf_pct,
+                "zone": active_zone,
+            },
+            "xai": {
+                "predicted_risk_level": xai_res.predicted_risk_level,
+                "confidence_score": xai_res.confidence_score,
+                "prediction_reliability": xai_res.prediction_reliability,
+                "base_value": xai_res.base_value,
+                "shap_contributions": xai_res.shap_contributions,
+                "feature_importance_ranking": xai_res.feature_importance_ranking,
+                "explanation_reason": xai_res.explanation_reason,
+            },
+            "explanation": xai_res.explanation_reason,
+            "alerts": alerts,
+            "cameras": cameras,
+            "system_status": "NORMAL" if risk_level in ["SAFE", "LOW"] else "MONITOR",
+        }
+
+    # ------------------------------------------------------------------
+    # SIMULATION FALLBACK PATH: Executed when no live camera feed is bound
+    # ------------------------------------------------------------------
     simulator.update_coordinates()
 
     crowd_count = len(simulator.pedestrians)
+    density = round(crowd_count / 40.0, 2)
+    avg_speed = 1.4
+    entry_rate = 35.0
+    exit_rate = 28.0
+    flow_angle = 180.0
+    queue_length = max(0, crowd_count - 30)
+    occupancy = round(min(150.0, (crowd_count / 60.0) * 100.0), 1)
+
     heatmap = []
     for cell in HEATMAP_CELLS:
         heatmap.append({
@@ -150,15 +296,29 @@ def build_payload() -> dict:
             "weight": round(min(1.0, cell["weight"] + random.uniform(-0.1, 0.1)), 2),
         })
 
-    risk_level = "LOW"
-    if crowd_count > 60:
-        risk_level = "HIGH"
-    elif crowd_count > 45:
-        risk_level = "MEDIUM"
+    risk_level, risk_score, confidence = predict_risk_from_metrics(
+        density=density,
+        speed=avg_speed,
+        entry_rate=entry_rate,
+        exit_rate=exit_rate,
+        flow_angle=flow_angle,
+        queue_length=queue_length,
+        occupancy=occupancy,
+    )
 
-    risk_score = round(min(100.0, 35 + (crowd_count * 0.9)), 1)
+    inp = PredictionInput(
+        density=density,
+        speed=avg_speed,
+        entry_rate=entry_rate,
+        exit_rate=exit_rate,
+        flow_direction_angle=flow_angle,
+        queue_length=queue_length,
+        occupancy=occupancy,
+    )
+    xai_res = xai_manager.explain(inp)
+
     alerts = []
-    if risk_level != "LOW":
+    if risk_level not in ["SAFE"]:
         alerts.append({
             "id": f"ALT-{int(time.time())}",
             "severity": risk_level,
@@ -176,8 +336,11 @@ def build_payload() -> dict:
             "fps": random.randint(20, 30),
         })
 
+    conf_pct = round(confidence * 100 if confidence <= 1.0 else confidence, 1)
+
     return {
         "timestamp": time.time(),
+        "is_live_vision": False,
         "pedestrians": [
             {
                 "id": p["id"],
@@ -187,15 +350,36 @@ def build_payload() -> dict:
             } for p in simulator.pedestrians
         ],
         "crowd_count": crowd_count,
+        "density": density,
+        "avg_speed": avg_speed,
+        "entry_rate": entry_rate,
+        "exit_rate": exit_rate,
+        "flow_angle": flow_angle,
+        "queue_length": queue_length,
+        "occupancy": occupancy,
         "heatmap": heatmap,
+        "risk_level": risk_level,
+        "risk_score": risk_score,
+        "confidence": conf_pct,
         "risk": {
             "level": risk_level,
             "score": risk_score,
+            "confidence": conf_pct,
             "zone": "Central Concourse",
         },
+        "xai": {
+            "predicted_risk_level": xai_res.predicted_risk_level,
+            "confidence_score": xai_res.confidence_score,
+            "prediction_reliability": xai_res.prediction_reliability,
+            "base_value": xai_res.base_value,
+            "shap_contributions": xai_res.shap_contributions,
+            "feature_importance_ranking": xai_res.feature_importance_ranking,
+            "explanation_reason": xai_res.explanation_reason,
+        },
+        "explanation": xai_res.explanation_reason,
         "alerts": alerts,
         "cameras": cameras,
-        "system_status": "NORMAL" if risk_level == "LOW" else "MONITOR",
+        "system_status": "NORMAL" if risk_level in ["SAFE"] else "MONITOR",
     }
 
 
@@ -231,9 +415,9 @@ async def websocket_map_endpoint(
     On failure the connection is closed immediately with code 1008 (Policy Violation).
     Allowed roles: ADMIN, SECURITY_OFFICER, EVENT_MANAGER.
     """
-    # ------------------------------------------------------------------
-    # AUTH GATE — validate token BEFORE accepting the WebSocket handshake
-    # ------------------------------------------------------------------
+    # Accept the handshake first so close code 1008 and reason reach the WS client
+    await websocket.accept()
+
     try:
         current_user = authenticate_websocket_token(token)
     except ValueError as exc:
@@ -246,10 +430,6 @@ async def websocket_map_endpoint(
         await websocket.close(code=1008, reason=reason)
         return
 
-    # ------------------------------------------------------------------
-    # ACCEPT — user is authenticated and authorised
-    # ------------------------------------------------------------------
-    await websocket.accept()
     active_connections.add(websocket)
     await websocket.send_text(serialize_json(build_payload()))
     logger.info(

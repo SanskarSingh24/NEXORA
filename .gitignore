@@ -51,6 +51,9 @@ reports_output/*.csv
 reports_output/*.html
 reports_output/*.pdf
 
-# --- Node ---
+# --- Node.js ---
 node_modules/
 frontend/node_modules/
+
+# npm logs
+npm-debug.log*

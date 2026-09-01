@@ -9,7 +9,7 @@ from passlib.context import CryptContext
 
 SECRET_KEY = os.getenv("NEXORA_JWT_SECRET", "nexora-dev-secret-change-me")
 ALGORITHM = os.getenv("NEXORA_JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("NEXORA_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("NEXORA_ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()

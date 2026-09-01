@@ -9,9 +9,8 @@ const restrictedZone = { x: 50, y: 50, width: 180, height: 120, label: "SECURE Z
 
 const initialCameras = [
     { id: "CAM-01", name: "Main Entrance Gateway", x: 150, y: 150, status: "ACTIVE", ip: "rtsp://10.0.1.50/stream1" },
-    { id: "CAM-02", name: "South escalators corridor", x: 650, y: 150, status: "ACTIVE", ip: "rtsp://10.0.1.51/stream1" },
-    { id: "CAM-03", name: "North Corridor LinkWAY", x: 250, y: 350, status: "ACTIVE", ip: "rtsp://10.0.1.52/stream1" },
-    { id: "CAM-04", name: "Evacuation Tunnel 4", x: 550, y: 350, status: "INACTIVE", ip: "rtsp://10.0.2.20/stream2" }
+    { id: "CAM-02", name: "South Escalators Corridor", x: 650, y: 150, status: "ACTIVE", ip: "0" },
+    { id: "CAM-03", name: "North Corridor LinkWAY", x: 250, y: 350, status: "ACTIVE", ip: "http://192.168.1.50:8080/video" }
 ];
 
 export default function CrowdMapPage() {
@@ -21,22 +20,104 @@ export default function CrowdMapPage() {
     const previousPedestriansRef = useRef([]);
     const lastPacketTimeRef = useRef(Date.now());
     const localSimIntervalRef = useRef(null);
+    const liveHeatmapRef = useRef(null);   // always current heatmap cells, safe in stale closures
+    const isLiveVisionRef = useRef(false); // true when backend is in live YOLOv8 mode
 
     const [showHeatmap, setShowHeatmap] = useState(true);
     const [showArrows, setShowArrows] = useState(true);
     const [showEvac, setShowEvac] = useState(true);
     const [simDensity, setSimDensity] = useState(50);
     const [selectedCam, setSelectedCam] = useState(null);
+    const [camerasList, setCamerasList] = useState(() => {
+        try {
+            const stored = localStorage.getItem('nexora_cameras');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    return parsed.map((c, idx) => ({
+                        ...c,
+                        x: c.x || 150 + ((idx * 200) % 600),
+                        y: c.y || 150 + ((idx * 120) % 300)
+                    }));
+                }
+            }
+        } catch (e) {
+            console.warn('[CrowdMap] localStorage read error:', e);
+        }
+        return initialCameras;
+    });
+
+    useEffect(() => {
+        const fetchCameras = async () => {
+            try {
+                let res;
+                try {
+                    res = await fetch('http://localhost:8000/cameras');
+                } catch {
+                    res = await fetch('http://127.0.0.1:8000/cameras');
+                }
+                if (res && res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data) && data.length > 0) {
+                        const mapped = data.map((c, idx) => ({
+                            id: c.camera_id,
+                            name: c.camera_name,
+                            x: 150 + ((idx * 200) % 600),
+                            y: 150 + ((idx * 120) % 300),
+                            status: c.status || 'ACTIVE',
+                            ip: c.source_location || c.rtsp_url || ''
+                        }));
+                        setCamerasList(mapped);
+                        localStorage.setItem('nexora_cameras', JSON.stringify(mapped));
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.warn('[CrowdMap] Camera fetch error:', err);
+            }
+
+            try {
+                const stored = localStorage.getItem('nexora_cameras');
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        setCamerasList(parsed.map((c, idx) => ({
+                            ...c,
+                            x: c.x || 150 + ((idx * 200) % 600),
+                            y: c.y || 150 + ((idx * 120) % 300)
+                        })));
+                    }
+                }
+            } catch (e) {}
+        };
+
+        fetchCameras();
+
+        const handleSync = () => fetchCameras();
+        window.addEventListener('nexora_cameras_updated', handleSync);
+        window.addEventListener('storage', handleSync);
+        return () => {
+            window.removeEventListener('nexora_cameras_updated', handleSync);
+            window.removeEventListener('storage', handleSync);
+        };
+    }, []);
 
     const token = localStorage.getItem('nexora_token');
     const { status: socketStatus, data: wsData } = useWebSocket('ws://localhost:8000/ws/map', token);
 
     const crowdCount = wsData?.crowd_count ?? pedestriansRef.current.length;
-    const riskLevel = wsData?.risk?.level ?? wsData?.risk_level ?? "LOW";
+    const riskLevel = wsData?.risk?.level ?? wsData?.risk_level ?? "SAFE";
+    const riskScore = wsData?.risk?.score ?? wsData?.risk_score ?? null;
+    const confidence = wsData?.risk?.confidence ?? wsData?.confidence ?? null;
+    const density = wsData?.density ?? null;
+    const activeZone = wsData?.risk?.zone ?? null;
+    const xaiReason = wsData?.xai?.explanation_reason ?? wsData?.explanation ?? null;
+    // Use server heatmap cells in BOTH live and simulation modes
+    const liveHeatmap = wsData?.heatmap ?? null;
 
-    // Initialize simulated pedestrians if WebSocket is disconnected
+    // Initialize simulated pedestrians — only when NOT already in live vision mode
     useEffect(() => {
-        // Local simulation seed data
+        if (isLiveVisionRef.current) return; // don't overwrite live YOLOv8 positions
         const dummyPedestrians = [];
         for (let i = 0; i < simDensity; i++) {
             const start = entryGates[Math.floor(Math.random() * entryGates.length)];
@@ -63,6 +144,10 @@ export default function CrowdMapPage() {
             pedestriansRef.current = wsData.pedestrians;
             lastPacketTimeRef.current = Date.now();
         }
+        // Track live vision mode for render-path switching
+        isLiveVisionRef.current = !!(wsData?.is_live_vision);
+        // Always store server heatmap cells (live OR sim fallback) — never null when WS has data
+        liveHeatmapRef.current = (wsData?.heatmap?.length > 0) ? wsData.heatmap : null;
     }, [wsData, socketStatus]);
 
     // Fallback simulator loop tick
@@ -236,20 +321,37 @@ export default function CrowdMapPage() {
             });
         };
 
-        const drawHeatmap = (peds) => {
+        const drawHeatmap = (peds, serverHeatmapCells) => {
             ctx.save();
             ctx.globalCompositeOperation = 'screen';
-            peds.forEach(p => {
-                const gradient = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 35);
-                gradient.addColorStop(0, 'rgba(239, 68, 68, 0.44)');
-                gradient.addColorStop(0.3, 'rgba(245, 158, 11, 0.22)');
-                gradient.addColorStop(1, 'rgba(3, 5, 9, 0)');
 
-                ctx.fillStyle = gradient;
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 35, 0, Math.PI * 2);
-                ctx.fill();
-            });
+            // Use server-side heatmap cells from vision engine when live (real density clusters)
+            if (serverHeatmapCells && serverHeatmapCells.length > 0) {
+                serverHeatmapCells.forEach(cell => {
+                    const radius = 55 + cell.weight * 45; // scale radius with density weight
+                    const alpha = 0.15 + cell.weight * 0.5;
+                    const gradient = ctx.createRadialGradient(cell.x, cell.y, 2, cell.x, cell.y, radius);
+                    gradient.addColorStop(0, `rgba(239, 68, 68, ${Math.min(0.85, alpha * 1.8)})`);
+                    gradient.addColorStop(0.35, `rgba(245, 158, 11, ${alpha * 0.6})`);
+                    gradient.addColorStop(1, 'rgba(3, 5, 9, 0)');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(cell.x, cell.y, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            } else {
+                // Fallback: derive heatmap from local pedestrian positions
+                peds.forEach(p => {
+                    const gradient = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 35);
+                    gradient.addColorStop(0, 'rgba(239, 68, 68, 0.44)');
+                    gradient.addColorStop(0.3, 'rgba(245, 158, 11, 0.22)');
+                    gradient.addColorStop(1, 'rgba(3, 5, 9, 0)');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 35, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            }
             ctx.restore();
         };
 
@@ -308,7 +410,7 @@ export default function CrowdMapPage() {
         };
 
         const drawSensors = () => {
-            initialCameras.forEach(cam => {
+            camerasList.forEach(cam => {
                 ctx.fillStyle = '#0b0f1e';
                 ctx.strokeStyle = '#0066ff';
                 ctx.lineWidth = 1.5;
@@ -335,21 +437,25 @@ export default function CrowdMapPage() {
                 prevMap[p.id] = p;
             });
 
-            const interpolated = getInterpolatedPedestrians(prevMap);
+            // When live vision is active, use exact backend positions (no sim interpolation).
+            // When in simulation mode, interpolate smoothly between WS packets.
+            const rendered = isLiveVisionRef.current
+                ? pedestriansRef.current  // exact YOLOv8 positions
+                : getInterpolatedPedestrians(prevMap); // smooth sim interpolation
 
             drawVenueLayout();
 
             if (showHeatmap) {
-                drawHeatmap(interpolated);
+                drawHeatmap(rendered, liveHeatmapRef.current);
             }
             if (showEvac) {
                 drawEvacPaths();
             }
             if (showArrows) {
-                drawArrows(interpolated, prevMap);
+                drawArrows(rendered, prevMap);
             }
 
-            drawParticles(interpolated);
+            drawParticles(rendered);
             drawSensors();
 
             animationFrameId.current = requestAnimationFrame(loop);
@@ -362,7 +468,7 @@ export default function CrowdMapPage() {
                 cancelAnimationFrame(animationFrameId.current);
             }
         };
-    }, [showHeatmap, showArrows, showEvac]);
+    }, [showHeatmap, showArrows, showEvac, camerasList]);
 
     // Click detector inside canvas to open live feeds
     const handleCanvasClick = (e) => {
@@ -372,7 +478,7 @@ export default function CrowdMapPage() {
         const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
         const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
 
-        for (let cam of initialCameras) {
+        for (let cam of camerasList) {
             const dist = Math.sqrt((clickX - cam.x) ** 2 + (clickY - cam.y) ** 2);
             if (dist < 18) {
                 setSelectedCam(cam);
@@ -510,14 +616,49 @@ export default function CrowdMapPage() {
                         </div>
                         <div className="flex justify-between">
                             <span>System Risk level:</span>
-                            <span className={`font-bold ${riskLevel === 'HIGH' || riskLevel === 'CRITICAL' ? 'text-statusRed' : 'text-[#00e5ff]'}`}>
-                                {riskLevel}
+                            <span className={`font-bold ${
+                                riskLevel === 'CRITICAL' ? 'text-red-500' :
+                                riskLevel === 'HIGH' ? 'text-statusRed' :
+                                riskLevel === 'MODERATE' ? 'text-yellow-400' :
+                                'text-[#00e5ff]'
+                            }`}>
+                                {riskLevel} {riskScore !== null ? `(${riskScore})` : ''}
                             </span>
                         </div>
+                        {confidence !== null && (
+                            <div className="flex justify-between">
+                                <span>AI Confidence:</span>
+                                <span className="text-accentCyan font-bold">{typeof confidence === 'number' ? confidence.toFixed(1) : confidence}%</span>
+                            </div>
+                        )}
+                        {density !== null && (
+                            <div className="flex justify-between">
+                                <span>Crowd Density:</span>
+                                <span className="text-white font-bold">{density.toFixed(2)} p/m²</span>
+                            </div>
+                        )}
+                        {activeZone && (
+                            <div className="flex justify-between">
+                                <span>Active Zone:</span>
+                                <span className="text-accentCyan font-bold truncate max-w-[120px]">{activeZone}</span>
+                            </div>
+                        )}
                         <div className="flex justify-between">
                             <span>Registered Nodes:</span>
-                            <span className="text-white font-bold">4 Cameras</span>
+                            <span className="text-white font-bold">{camerasList.length} Cameras</span>
                         </div>
+                        {wsData?.is_live_vision && (
+                            <div className="flex justify-between">
+                                <span>Vision Source:</span>
+                                <span className="text-statusGreen font-bold">LIVE YOLOv8</span>
+                            </div>
+                        )}
+                        {xaiReason && (
+                            <div className="mt-2 p-2.5 rounded bg-slate-950 border border-panelBorder text-[11px] text-slate-300 font-sans leading-relaxed">
+                                <span className="text-accentCyan font-bold font-mono block mb-1">[XAI REASONING]:</span>
+                                {xaiReason}
+                            </div>
+                        )}
                     </div>
                 </div>
 

@@ -16,8 +16,13 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, sessionmaker
 from contextlib import contextmanager
+from fastapi import FastAPI, HTTPException, status, Query
+from pydantic import BaseModel
 
 from config.settings import settings
+from backend.vision.vision_engine import get_live_telemetry_snapshot
+from backend.ai.predictive_engine import predict_risk_from_metrics
+from backend.ai.explainable_api import xai_manager, PredictionInput
 
 # =====================================================================
 # 1. DATABASE CONFIGURATION
@@ -80,6 +85,7 @@ def init_db():
 class AlertManagementService:
     def __init__(self, db_session_factory=SessionLocal):
         self.Session = db_session_factory
+        self.manual_alerts: List[dict] = []
         init_db()
 
     @contextmanager
@@ -93,6 +99,49 @@ class AlertManagementService:
             raise
         finally:
             session.close()
+
+    def trigger_manual_alert(self, 
+                             camera: Optional[str] = "CAM-01", 
+                             zone: Optional[str] = "Central Concourse", 
+                             level: Optional[str] = "RED",
+                             risk_level: Optional[str] = "CRITICAL",
+                             message: Optional[str] = None) -> dict:
+        """
+        Manually triggers an operator-forced emergency alert and adds it to the real-time alert stream.
+        """
+        now = datetime.now(timezone.utc)
+        ts_id = f"AL-{int(now.timestamp())}"
+        alert_msg = message or "Manual Threat Trigger: Operator forced emergency alert parameter breach."
+        
+        forced_item = {
+            "id": ts_id,
+            "camera_id": camera or "CAM-01",
+            "camera": camera or "CAM-01",
+            "zone": zone or "Central Concourse",
+            "risk_level": risk_level or "CRITICAL",
+            "severity": level or "RED",
+            "level": level or "RED",
+            "risk_score": 92.5,
+            "confidence": 96.5,
+            "message": alert_msg,
+            "explanation": alert_msg,
+            "shap_contributions": {
+                "density": 0.48,
+                "speed": -0.22,
+                "queue_length": 0.35,
+                "occupancy": 0.41
+            },
+            "recommendations": [
+                "Initiate emergency exit path routing.",
+                "Automate direction sign arrows."
+            ],
+            "timestamp": now.isoformat(),
+            "is_acknowledged": False
+        }
+
+        # Keep latest 20 manual alerts
+        self.manual_alerts = [forced_item] + [a for a in self.manual_alerts if a["id"] != ts_id][:19]
+        return forced_item
 
     def generate_critical_alert(self, 
                                 camera_id: UUID, 
@@ -123,6 +172,13 @@ class AlertManagementService:
         """
         Marks an existing alert record as acknowledged by an operator.
         """
+        # Also acknowledge in memory list
+        str_id = str(alert_id)
+        for ma in self.manual_alerts:
+            if ma["id"] == str_id:
+                ma["is_acknowledged"] = True
+                ma["operator"] = operator_id
+
         with self._get_session() as db:
             alert = db.query(AlertRecord).filter(AlertRecord.alert_id == alert_id).first()
             if not alert:
@@ -160,6 +216,154 @@ class AlertManagementService:
                 .limit(limit)
                 .all()
             )
+
+    def evaluate_live_telemetry_alerts(self) -> List[dict]:
+        """
+        Evaluates real-time live computer vision telemetry, ML risk scoring, and SHAP explainability
+        data to trigger dynamic emergency alerts when crowd risk exceeds safety thresholds.
+        """
+        snapshot = get_live_telemetry_snapshot()
+        auto_alerts = []
+
+        density = snapshot.get("density", 0.0)
+        speed = snapshot.get("avg_speed", 1.2)
+        entry_rate = snapshot.get("entry_rate", 0.0)
+        exit_rate = snapshot.get("exit_rate", 0.0)
+        flow_angle = snapshot.get("flow_angle", 0.0)
+        queue_length = snapshot.get("queue_length", 0)
+        crowd_count = snapshot.get("crowd_count", 0)
+        occupancy = round(min(150.0, (crowd_count / 80.0) * 100.0), 1)
+
+        # Evaluate real-time risk score and class label from live metrics
+        risk_level, risk_score, confidence = predict_risk_from_metrics(
+            density=density,
+            speed=speed,
+            entry_rate=entry_rate,
+            exit_rate=exit_rate,
+            flow_angle=flow_angle,
+            queue_length=queue_length,
+            occupancy=occupancy,
+        )
+
+        # Compute live SHAP explanation
+        inp = PredictionInput(
+            density=density,
+            speed=speed,
+            entry_rate=entry_rate,
+            exit_rate=exit_rate,
+            flow_direction_angle=flow_angle,
+            queue_length=queue_length,
+            occupancy=occupancy,
+        )
+        xai_res = xai_manager.explain(inp)
+
+        # Trigger dynamic alert if risk level is elevated (MODERATE, HIGH, or CRITICAL)
+        if risk_level in ["MODERATE", "HIGH", "CRITICAL", "YELLOW", "ORANGE", "RED"]:
+            severity = "RED" if risk_level in ["CRITICAL", "RED", "HIGH", "ORANGE"] else "YELLOW"
+            conf_pct = round(confidence * 100 if confidence <= 1.0 else confidence, 1)
+
+            recommendations = []
+            if density > 3.0:
+                recommendations.append("Enact directional corridor rerouting and open emergency spillways.")
+            if queue_length > 15:
+                recommendations.append("Deploy security marshals to regulate entrance queue inflow.")
+            if speed < 0.8:
+                recommendations.append("Clear pedestrian bottlenecks near escalators and gate choke points.")
+            if not recommendations:
+                recommendations.append("Increase real-time video surveillance and prepare evacuation corridors.")
+
+            alert_item = {
+                "id": f"AL-{int(datetime.now(timezone.utc).timestamp())}",
+                "camera_id": "CAM-01",
+                "risk_level": risk_level,
+                "severity": severity,
+                "risk_score": risk_score,
+                "confidence": conf_pct,
+                "message": xai_res.explanation_reason,
+                "explanation": xai_res.explanation_reason,
+                "shap_contributions": xai_res.shap_contributions,
+                "recommendations": recommendations,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "is_acknowledged": False
+            }
+            auto_alerts.append(alert_item)
+
+        # Merge manual forced alerts and auto-evaluated telemetry alerts
+        combined = self.manual_alerts + auto_alerts
+        # Deduplicate by ID
+        seen = set()
+        deduped = []
+        for a in combined:
+            aid = a.get("id")
+            if aid not in seen:
+                seen.add(aid)
+                deduped.append(a)
+
+        return deduped
+
+
+# =====================================================================
+# 4. FASTAPI ALERT SERVICE ENDPOINTS
+# =====================================================================
+
+app = FastAPI(title="NEXORA Alert Management Service", version="1.0.0")
+alert_service_instance = AlertManagementService()
+
+class ForceAlertPayload(BaseModel):
+    camera: Optional[str] = "CAM-01"
+    zone: Optional[str] = "Central Concourse"
+    level: Optional[str] = "RED"
+    risk_level: Optional[str] = "CRITICAL"
+    message: Optional[str] = None
+
+@app.get("/alerts")
+@app.get("/api/alerts")
+def get_alerts():
+    """Returns dynamic alerts triggered directly from live telemetry, risk scoring, and SHAP data."""
+    live_alerts = alert_service_instance.evaluate_live_telemetry_alerts()
+    return {
+        "status": "success",
+        "count": len(live_alerts),
+        "alerts": live_alerts
+    }
+
+@app.get("/alerts/active")
+@app.get("/api/alerts/active")
+def get_active_alerts():
+    return alert_service_instance.evaluate_live_telemetry_alerts()
+
+@app.post("/alerts/trigger")
+@app.post("/api/alerts/trigger")
+@app.post("/alerts/force")
+@app.post("/api/alerts/force")
+def trigger_alert_endpoint(payload: Optional[ForceAlertPayload] = None):
+    data = payload.dict() if payload else {}
+    new_alert = alert_service_instance.trigger_manual_alert(
+        camera=data.get("camera"),
+        zone=data.get("zone"),
+        level=data.get("level"),
+        risk_level=data.get("risk_level"),
+        message=data.get("message")
+    )
+    return {
+        "status": "success",
+        "alert": new_alert
+    }
+
+@app.post("/alerts/acknowledge/{alert_id}")
+@app.post("/api/alerts/acknowledge/{alert_id}")
+def acknowledge_alert_endpoint(alert_id: str, operator_id: str = "Operator"):
+    # Mark in memory
+    for ma in alert_service_instance.manual_alerts:
+        if ma.get("id") == alert_id:
+            ma["is_acknowledged"] = True
+            ma["operator"] = operator_id
+    return {
+        "status": "acknowledged",
+        "alert_id": alert_id,
+        "operator_id": operator_id,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 # =====================================================================
 # 4. DIRECT TEST HOOK

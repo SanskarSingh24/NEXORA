@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     LayoutDashboard,
     Activity,
@@ -14,24 +14,51 @@ import {
     PlusCircle,
     Shield,
     Smartphone,
-    Eye
+    Eye,
+    Trash2,
+    RefreshCw
 } from 'lucide-react';
 import { useWebSocket } from '../hooks/useWebSocket';
 
-// Initial constants
+// Initial constants for initial render or fallback
 const initialCameras = [
-    { id: "CAM-01", name: "Main Entrance Gateway", zone: "Zone A", lat: 37.7749, lng: -122.4194, status: "ACTIVE", ip: "rtsp://10.0.1.50/stream1" },
-    { id: "CAM-02", name: "South escalators corridor", zone: "Zone B", lat: 37.7752, lng: -122.4190, status: "ACTIVE", ip: "rtsp://10.0.1.51/stream1" },
-    { id: "CAM-03", name: "North Corridor LinkWAY", zone: "Lower Level", lat: 37.7745, lng: -122.4198, status: "ACTIVE", ip: "rtsp://10.0.1.52/stream1" },
-    { id: "CAM-04", name: "Evacuation Tunnel 4", zone: "Emergency Zone", lat: 37.7741, lng: -122.4185, status: "INACTIVE", ip: "rtsp://10.0.2.20/stream2" }
-];
-
-const initialAlerts = [
-    { id: "AL-1910", camera: "CAM-02", zone: "South escalators corridor", level: "RED", message: "Critical crowd pressure anomaly detected near entrance gates.", confidence: 96.2, time: "Just Now", acknowledged: false },
-    { id: "AL-1906", camera: "CAM-01", zone: "Main Entrance Gateway", level: "YELLOW", message: "Moderate occupancy surge detected during incoming train arrival.", confidence: 84.5, time: "18 mins ago", acknowledged: true }
+    { id: "CAM-01", name: "Main Entrance Gateway", zone: "Zone A", type: "IP_CAMERA", lat: 37.7749, lng: -122.4194, status: "ACTIVE", ip: "rtsp://10.0.1.50/stream1" },
+    { id: "CAM-02", name: "South Escalators Corridor", zone: "Zone B", type: "USB_WEBCAM", lat: 37.7750, lng: -122.4195, status: "ACTIVE", ip: "0" },
+    { id: "CAM-03", name: "North Corridor LinkWAY", zone: "Lower Level", type: "MOBILE_CAMERA", lat: 37.7751, lng: -122.4196, status: "ACTIVE", ip: "http://192.168.1.50:8080/video" }
 ];
 
 // Helper components
+const extractMsg = (val) => {
+    if (!val) return null;
+    if (typeof val === 'string') return val;
+    if (typeof val === 'object') return val.message || val.explanation || val.reason || null;
+    return String(val);
+};
+
+const formatAlertItem = (a) => {
+    if (!a) return null;
+    const item = (typeof a === 'object' && a !== null) ? a : {};
+    const rawLevel = item.risk_level || item.severity || (item.level === 'RED' ? 'CRITICAL' : 'MODERATE');
+    const isCritical = rawLevel === 'CRITICAL' || rawLevel === 'HIGH' || rawLevel === 'RED';
+    const msg = extractMsg(item.message) || extractMsg(item.explanation) || "Real-time crowd pressure anomaly flagged.";
+
+    return {
+        id: typeof item.id === 'string' || typeof item.id === 'number' ? String(item.id) : `AL-${Math.floor(Date.now() / 1000)}`,
+        camera: typeof item.camera === 'string' ? item.camera : (item.camera_id || "CAM-01"),
+        zone: typeof item.zone === 'string' ? item.zone : (item.zone_id || "Central Concourse"),
+        level: isCritical ? "RED" : "YELLOW",
+        risk_level: typeof rawLevel === 'string' ? rawLevel : "MODERATE",
+        risk_score: typeof item.risk_score === 'number' ? item.risk_score : (isCritical ? 85.0 : 55.0),
+        message: msg,
+        explanation: msg,
+        confidence: typeof item.confidence === 'number' ? Math.round(item.confidence <= 1.0 ? item.confidence * 100 : item.confidence) : 94,
+        time: item.timestamp ? (typeof item.timestamp === 'string' ? item.timestamp.replace('T', ' ').substring(0, 19) : new Date(item.timestamp * 1000).toISOString().replace('T', ' ').substring(0, 19)) : (typeof item.time === 'string' ? item.time : new Date().toISOString().replace('T', ' ').substring(0, 19)),
+        acknowledged: !!item.is_acknowledged || !!item.acknowledged,
+        operator: typeof item.operator === 'string' ? item.operator : (item.operator_id || null),
+        shap_contributions: item.shap_contributions && typeof item.shap_contributions === 'object' ? item.shap_contributions : null,
+        recommendations: Array.isArray(item.recommendations) ? item.recommendations : []
+    };
+};
 function StatCard({ title, value, sub, icon: Icon, colorClass, statusLight = null }) {
     return (
         <div className="glass-card rounded-xl p-5 border border-panelBorder bg-bgSecondary/60 hover:border-slate-700 transition-all flex flex-col justify-between">
@@ -52,24 +79,39 @@ function StatCard({ title, value, sub, icon: Icon, colorClass, statusLight = nul
     );
 }
 
-function RiskMeter({ value }) {
+function RiskMeter({ value, score }) {
     const levels = {
+        SAFE: { label: "SAFE", color: "text-statusGreen", bg: "bg-statusGreen", desc: "Standard flow rate boundaries." },
         GREEN: { label: "SAFE", color: "text-statusGreen", bg: "bg-statusGreen", desc: "Standard flow rate boundaries." },
+        MODERATE: { label: "MODERATE", color: "text-statusYellow", bg: "bg-statusYellow", desc: "Elevated count; surveillance raised." },
         YELLOW: { label: "MODERATE", color: "text-statusYellow", bg: "bg-statusYellow", desc: "Elevated count; surveillance raised." },
+        HIGH: { label: "HIGH", color: "text-statusOrange", bg: "bg-statusOrange", desc: "Density crossing boundaries. Prepare paths." },
         ORANGE: { label: "HIGH", color: "text-statusOrange", bg: "bg-statusOrange", desc: "Density crossing boundaries. Prepare paths." },
+        CRITICAL: { label: "CRITICAL", color: "text-statusRed", bg: "bg-statusRed", desc: "Crowd pressure threshold breached!" },
         RED: { label: "CRITICAL", color: "text-statusRed", bg: "bg-statusRed", desc: "Crowd pressure threshold breached!" }
     };
-    const selected = levels[value] || levels.GREEN;
+    const selected = levels[value] || levels.SAFE;
+    const progressWidth = score !== undefined && score !== null
+        ? `${Math.min(100, Math.max(5, score))}%`
+        : (value === 'CRITICAL' || value === 'RED' ? '100%' : value === 'HIGH' || value === 'ORANGE' ? '75%' : value === 'MODERATE' || value === 'YELLOW' ? '45%' : '20%');
+
     return (
         <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
                 <span className="text-xs uppercase tracking-wider text-textMuted font-bold">Flow Status</span>
-                <span className={`text-sm font-extrabold font-outfit px-3 py-0.5 rounded-full bg-slate-900 border border-slate-800 ${selected.color}`}>
-                    {selected.label}
-                </span>
+                <div className="flex items-center gap-2">
+                    {score !== undefined && score !== null && (
+                        <span className="text-xs font-mono font-bold text-accentCyan bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-full">
+                            Score: {score}
+                        </span>
+                    )}
+                    <span className={`text-sm font-extrabold font-outfit px-3 py-0.5 rounded-full bg-slate-900 border border-slate-800 ${selected.color}`}>
+                        {selected.label}
+                    </span>
+                </div>
             </div>
             <div className="w-full bg-bgPrimary h-2.5 rounded-full overflow-hidden border border-panelBorder p-[1px]">
-                <div className={`h-full rounded-full transition-all duration-500 ${selected.bg}`} style={{ width: value === 'RED' ? '100%' : value === 'ORANGE' ? '75%' : value === 'YELLOW' ? '45%' : '20%' }}></div>
+                <div className={`h-full rounded-full transition-all duration-500 ${selected.bg}`} style={{ width: progressWidth }}></div>
             </div>
             <p className="text-[11px] text-textMuted mt-1">{selected.desc}</p>
         </div>
@@ -77,7 +119,10 @@ function RiskMeter({ value }) {
 }
 
 function ConfidenceGauge({ percentage }) {
-    const strokeOffset = 220 - (220 * percentage) / 100;
+    const numericVal = typeof percentage === 'number'
+        ? (percentage <= 1.0 ? Math.round(percentage * 100) : Math.round(percentage))
+        : 94;
+    const strokeOffset = 220 - (220 * numericVal) / 100;
     return (
         <div className="flex flex-col items-center justify-center p-2">
             <div className="relative w-28 h-28 flex items-center justify-center">
@@ -85,24 +130,118 @@ function ConfidenceGauge({ percentage }) {
                     <circle cx="56" cy="56" r="35" className="stroke-slate-900 fill-none" strokeWidth="6" />
                     <circle cx="56" cy="56" r="35" className="stroke-accentCyan fill-none transition-all duration-700" strokeWidth="6" strokeDasharray="220" strokeDashoffset={strokeOffset} strokeLinecap="round" />
                 </svg>
-                <span className="absolute text-lg font-extrabold font-outfit text-white">{percentage}%</span>
+                <span className="absolute text-lg font-extrabold font-outfit text-white">{numericVal}%</span>
             </div>
             <p className="text-[10px] text-textMuted uppercase tracking-widest font-bold mt-2">AI Engine Confidence</p>
         </div>
     );
 }
 
+function ShapExplainabilityPanel({ xaiData, riskLevel }) {
+    if (!xaiData) {
+        return (
+            <div className="glass-card rounded-xl p-5 border border-panelBorder flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-accentCyan" />
+                    <h3 className="font-outfit font-semibold text-white text-sm">Real-Time SHAP Feature Attributions</h3>
+                </div>
+                <p className="text-xs text-textMuted font-mono animate-pulse">Waiting for live SHAP explainability telemetry stream...</p>
+            </div>
+        );
+    }
+
+    const contributions = xaiData.shap_contributions || {};
+    const reason = xaiData.explanation_reason || "Live metrics evaluated via XGBoost / SHAP engine.";
+    const reliability = xaiData.prediction_reliability !== undefined
+        ? Math.round(xaiData.prediction_reliability * 100)
+        : 92;
+
+    const featureLabels = {
+        density: "Crowd Density",
+        speed: "Movement Speed",
+        queue_length: "Queue Length",
+        occupancy: "Zone Occupancy",
+        entry_rate: "Entry Rate",
+        exit_rate: "Exit Rate",
+        flow_angle: "Flow Alignment"
+    };
+
+    return (
+        <div className="glass-card rounded-xl p-5 border border-panelBorder flex flex-col gap-4 bg-bgSecondary/40">
+            <div className="flex justify-between items-center border-b border-panelBorder pb-3">
+                <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-accentCyan" />
+                    <h3 className="font-outfit font-semibold text-white text-sm">Real-Time SHAP Feature Attributions</h3>
+                </div>
+                <div className="flex items-center gap-2 font-mono text-[10px]">
+                    <span className="text-textMuted">Reliability Index:</span>
+                    <span className="text-statusGreen font-bold">{reliability}%</span>
+                </div>
+            </div>
+
+            {/* Natural language reason string */}
+            <div className="p-3.5 rounded-lg bg-slate-950/90 border border-panelBorder text-xs leading-relaxed text-slate-300 shadow-inner">
+                <span className="text-accentCyan font-bold font-mono mr-1.5">[AI REASONING]:</span>
+                {reason}
+            </div>
+
+            {/* SHAP Feature Contribution Bars */}
+            <div className="flex flex-col gap-2 mt-1">
+                <p className="text-[10px] uppercase font-bold text-textMuted tracking-wider">Feature Impact Breakdown (SHAP Values)</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    {Object.entries(contributions).map(([featKey, val]) => {
+                        const label = featureLabels[featKey] || featKey;
+                        const isPositive = val >= 0;
+                        const absVal = Math.min(1.0, Math.abs(val));
+                        const pctWidth = `${Math.max(12, Math.round(absVal * 100))}%`;
+
+                        return (
+                            <div key={featKey} className="flex flex-col gap-1 p-2.5 rounded bg-bgPrimary/70 border border-panelBorder/60">
+                                <div className="flex justify-between text-[11px] font-mono">
+                                    <span className="text-slate-300 font-medium">{label}</span>
+                                    <span className={`font-bold ${isPositive ? 'text-statusOrange' : 'text-statusGreen'}`}>
+                                        {isPositive ? `+${val.toFixed(2)}` : val.toFixed(2)}
+                                    </span>
+                                </div>
+                                <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
+                                    <div
+                                        className={`h-full rounded-full transition-all duration-500 ${isPositive ? 'bg-statusOrange' : 'bg-statusGreen'}`}
+                                        style={{ width: pctWidth }}
+                                    ></div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function DashboardPage() {
-    const [localCams, setLocalCams] = useState(initialCameras);
-    const [localAlerts, setLocalAlerts] = useState(initialAlerts);
+    const [localCams, setLocalCams] = useState(() => {
+        try {
+            const stored = localStorage.getItem('nexora_cameras');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+        } catch (e) { }
+        return initialCameras;
+    });
+
+    const [localAlerts, setLocalAlerts] = useState([]);
     const [selectedCamStream, setSelectedCamStream] = useState(null);
-    const [triggerCriticalAlert, setTriggerCriticalAlert] = useState(false);
     const [showAddCamModal, setShowAddCamModal] = useState(false);
+    const lastAlertKeyRef = useRef(null);
 
     // New Camera Form Fields
     const [newCamName, setNewCamName] = useState("");
     const [newCamZone, setNewCamZone] = useState("");
-    const [newCamRtsp, setNewCamRtsp] = useState("");
+    const [newCamSourceType, setNewCamSourceType] = useState("IP_CAMERA"); // IP_CAMERA | USB_WEBCAM | MOBILE_CAMERA
+    const [newCamSourceLoc, setNewCamSourceLoc] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [formError, setFormError] = useState(null);
 
     const token = localStorage.getItem('nexora_token');
     // Connect to the WebSocket on the unified backend gateway (port 8000)
@@ -110,40 +249,252 @@ export default function DashboardPage() {
 
     // Read message data with local mock fallbacks if websocket disconnected
     const crowdCount = wsData?.crowd_count ?? 118;
-    const riskLevel = wsData?.risk_level ?? "MEDIUM";
+    const riskLevel = wsData?.risk?.level ?? wsData?.risk_level ?? "SAFE";
+    const riskScore = wsData?.risk?.score ?? wsData?.risk_score ?? 25.0;
+    const confidence = wsData?.risk?.confidence ?? wsData?.confidence ?? 94;
+    const xaiData = wsData?.xai ?? null;
     const systemAlerts = wsData?.alerts ?? [];
 
-    useEffect(() => {
-        if (riskLevel === "RED") {
-            setTriggerCriticalAlert(true);
+    // Fetch cameras & initial live alerts from backend API
+    const loadCamerasFromBackend = async () => {
+        try {
+            let res;
+            try {
+                res = await fetch('http://localhost:8000/cameras');
+            } catch {
+                res = await fetch('http://127.0.0.1:8000/cameras');
+            }
+
+            if (res && res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data) && data.length > 0) {
+                    const mapped = data.map(c => ({
+                        id: c.camera_id,
+                        name: c.camera_name,
+                        zone: c.zone_id || 'Zone A',
+                        type: c.source_type || 'IP_CAMERA',
+                        location: c.source_location || c.rtsp_url || '',
+                        status: c.status || 'ACTIVE',
+                        lat: c.latitude ?? 37.7749,
+                        lng: c.longitude ?? -122.4194,
+                        ip: c.source_location || c.rtsp_url || ''
+                    }));
+                    setLocalCams(mapped);
+                    localStorage.setItem('nexora_cameras', JSON.stringify(mapped));
+                }
+            }
+        } catch (err) {
+            console.warn('[DashboardPage] Camera load fallback:', err);
         }
-    }, [riskLevel]);
-
-    const handleAcknowledgeEmergency = () => {
-        setTriggerCriticalAlert(false);
     };
 
-    const handleAcknowledgeAlert = (alertId) => {
-        setLocalAlerts(prev => prev.map(a => a.id === alertId ? { ...a, acknowledged: true } : a));
+    const loadAlertsFromBackend = async () => {
+        try {
+            let res;
+            try {
+                res = await fetch('http://localhost:8000/alerts');
+            } catch {
+                res = await fetch('http://127.0.0.1:8000/alerts');
+            }
+
+            if (res && res.ok) {
+                const data = await res.json();
+                if (data && Array.isArray(data.alerts) && data.alerts.length > 0) {
+                    const mapped = data.alerts.map(a => formatAlertItem(a));
+                    setLocalAlerts(mapped);
+                }
+            }
+        } catch (err) {
+            console.warn('[DashboardPage] Alert load fallback:', err);
+        }
     };
 
-    const handleAddCamera = (e) => {
-        e.preventDefault();
-        if (!newCamName || !newCamZone) return;
-        const newCam = {
-            id: `CAM-0${localCams.length + 1}`,
-            name: newCamName,
-            zone: newCamZone,
-            lat: 37.774 + (Math.random() - 0.5) * 0.01,
-            lng: -122.418 + (Math.random() - 0.5) * 0.01,
-            status: "ACTIVE",
-            ip: newCamRtsp || "rtsp://10.0.1.99/stream1"
+    useEffect(() => {
+        loadCamerasFromBackend();
+        loadAlertsFromBackend();
+
+        const handleSync = () => {
+            loadCamerasFromBackend();
+            loadAlertsFromBackend();
         };
-        setLocalCams(prev => [...prev, newCam]);
-        setNewCamName("");
-        setNewCamZone("");
-        setNewCamRtsp("");
-        setShowAddCamModal(false);
+
+        window.addEventListener('nexora_cameras_updated', handleSync);
+        window.addEventListener('storage', handleSync);
+        return () => {
+            window.removeEventListener('nexora_cameras_updated', handleSync);
+            window.removeEventListener('storage', handleSync);
+        };
+    }, []);
+
+    const [acknowledgedIds, setAcknowledgedIds] = useState(new Set());
+
+    // Listen to real-time WebSocket data stream and update Urgent Alerts Console dynamically
+    useEffect(() => {
+        if (!wsData) return;
+
+        if (Array.isArray(wsData.alerts) && wsData.alerts.length > 0) {
+            const formatted = wsData.alerts.map(a => {
+                const item = formatAlertItem(a);
+                if (acknowledgedIds.has(item.id)) {
+                    item.acknowledged = true;
+                }
+                return item;
+            });
+            setLocalAlerts(formatted);
+        } else {
+            setLocalAlerts([]);
+        }
+    }, [wsData, acknowledgedIds]);
+
+    const handleAcknowledgeAlert = async (alertId) => {
+        setAcknowledgedIds(prev => new Set([...prev, alertId]));
+        setLocalAlerts(prev => prev.map(a => a.id === alertId ? { ...a, acknowledged: true } : a));
+        try {
+            let res;
+            try {
+                res = await fetch(`http://localhost:8000/alerts/acknowledge/${alertId}`, { method: 'POST' });
+            } catch {
+                res = await fetch(`http://127.0.0.1:8000/alerts/acknowledge/${alertId}`, { method: 'POST' });
+            }
+        } catch (err) {
+            console.warn('[DashboardPage] Acknowledge call fallback:', err);
+        }
+    };
+
+    const displayAlerts = React.useMemo(() => {
+        const unacked = localAlerts.filter(a => !a.acknowledged);
+        const acked = localAlerts.filter(a => a.acknowledged).slice(0, 5);
+        return [...unacked, ...acked];
+    }, [localAlerts]);
+
+    // End-to-End Add Camera Flow: Submits to backend REST API (POST /cameras) & saves to DB
+    const handleAddCamera = async (e) => {
+        e.preventDefault();
+        if (!newCamName.trim() || !newCamZone.trim()) return;
+
+        setIsSubmitting(true);
+        setFormError(null);
+
+        const defaultLocation = newCamSourceType === 'USB_WEBCAM' ? '0' : newCamSourceLoc.trim();
+
+        const payload = {
+            camera_name: newCamName.trim(),
+            source_type: newCamSourceType,
+            source_location: defaultLocation || (newCamSourceType === 'IP_CAMERA' ? 'rtsp://10.0.1.50/stream1' : 'http://192.168.1.50:8080/video'),
+            rtsp_url: defaultLocation || (newCamSourceType === 'IP_CAMERA' ? 'rtsp://10.0.1.50/stream1' : 'http://192.168.1.50:8080/video'),
+            zone_id: newCamZone.trim(),
+            latitude: 37.7749 + (Math.random() - 0.5) * 0.01,
+            longitude: -122.4194 + (Math.random() - 0.5) * 0.01,
+            homography_matrix: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+        };
+
+        try {
+            let res;
+            try {
+                res = await fetch('http://localhost:8000/cameras', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            } catch {
+                res = await fetch('http://127.0.0.1:8000/cameras', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            }
+
+            let newCamObj;
+            if (res && (res.status === 201 || res.status === 200)) {
+                const created = await res.json();
+                newCamObj = {
+                    id: created.camera_id,
+                    name: created.camera_name,
+                    zone: created.zone_id,
+                    type: created.source_type,
+                    location: created.source_location || created.rtsp_url,
+                    status: created.status || 'ACTIVE',
+                    lat: created.latitude,
+                    lng: created.longitude,
+                    ip: created.source_location || created.rtsp_url
+                };
+            } else {
+                // Local fallback item if backend call returned unexpected status
+                newCamObj = {
+                    id: `CAM-0${localCams.length + 1}`,
+                    name: payload.camera_name,
+                    zone: payload.zone_id,
+                    type: payload.source_type,
+                    location: payload.source_location,
+                    status: "ACTIVE",
+                    lat: payload.latitude,
+                    lng: payload.longitude,
+                    ip: payload.source_location
+                };
+            }
+
+            const updatedCams = [...localCams, newCamObj];
+            setLocalCams(updatedCams);
+            localStorage.setItem('nexora_cameras', JSON.stringify(updatedCams));
+            window.dispatchEvent(new Event('nexora_cameras_updated'));
+
+            // Reset Form fields & close modal
+            setNewCamName("");
+            setNewCamZone("");
+            setNewCamSourceLoc("");
+            setNewCamSourceType("IP_CAMERA");
+            setShowAddCamModal(false);
+        } catch (err) {
+            console.error('[DashboardPage] Add camera error:', err);
+            setFormError("Failed to save camera to server. Adding locally.");
+
+            const fallbackCam = {
+                id: `CAM-0${localCams.length + 1}`,
+                name: payload.camera_name,
+                zone: payload.zone_id,
+                type: payload.source_type,
+                location: payload.source_location,
+                status: "ACTIVE",
+                lat: payload.latitude,
+                lng: payload.longitude,
+                ip: payload.source_location
+            };
+            const updatedCams = [...localCams, fallbackCam];
+            setLocalCams(updatedCams);
+            localStorage.setItem('nexora_cameras', JSON.stringify(updatedCams));
+            window.dispatchEvent(new Event('nexora_cameras_updated'));
+
+            setNewCamName("");
+            setNewCamZone("");
+            setNewCamSourceLoc("");
+            setNewCamSourceType("IP_CAMERA");
+            setShowAddCamModal(false);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    // Delete camera handler
+    const handleDeleteCamera = async (e, camId) => {
+        e.stopPropagation();
+        try {
+            try {
+                await fetch(`http://localhost:8000/cameras/${camId}`, { method: 'DELETE' });
+            } catch {
+                await fetch(`http://127.0.0.1:8000/cameras/${camId}`, { method: 'DELETE' });
+            }
+        } catch (err) {
+            console.warn('[DashboardPage] Delete camera warning:', err);
+        }
+
+        const updated = localCams.filter(c => c.id !== camId);
+        setLocalCams(updated);
+        localStorage.setItem('nexora_cameras', JSON.stringify(updated));
+        window.dispatchEvent(new Event('nexora_cameras_updated'));
+
+        if (selectedCamStream === camId) {
+            setSelectedCamStream(null);
+        }
     };
 
     return (
@@ -178,11 +529,11 @@ export default function DashboardPage() {
                 />
                 <StatCard
                     title="Risk Index"
-                    value={riskLevel}
-                    sub="Evaluation tier rating"
+                    value={`${riskLevel}`}
+                    sub={`Live ML Score: ${riskScore} / 100`}
                     icon={Shield}
-                    colorClass={riskLevel === 'HIGH' || riskLevel === 'CRITICAL' ? 'text-statusRed' : 'text-statusYellow'}
-                    statusLight={riskLevel === 'CRITICAL' ? 'bg-statusRed' : 'bg-statusYellow'}
+                    colorClass={riskLevel === 'HIGH' || riskLevel === 'CRITICAL' ? 'text-statusRed' : riskLevel === 'MODERATE' ? 'text-statusYellow' : 'text-statusGreen'}
+                    statusLight={riskLevel === 'CRITICAL' ? 'bg-statusRed' : riskLevel === 'HIGH' ? 'bg-statusOrange' : riskLevel === 'MODERATE' ? 'bg-statusYellow' : 'bg-statusGreen'}
                 />
                 <StatCard
                     title="Active Cameras"
@@ -200,15 +551,18 @@ export default function DashboardPage() {
                 />
             </div>
 
+            {/* REAL-TIME SHAP XAI EXPLAINABILITY PANEL */}
+            <ShapExplainabilityPanel xaiData={xaiData} riskLevel={riskLevel} />
+
             {/* SECOND SECTION: VISUAL GAUGES & CAMERAS LIST */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                 {/* Risk & Confidence Gauge box */}
                 <div className="glass-card rounded-xl p-5 border border-panelBorder flex flex-col justify-between gap-6">
                     <h3 className="font-outfit font-semibold text-white">AI Predictor Gauges</h3>
-                    <RiskMeter value={riskLevel} />
+                    <RiskMeter value={riskLevel} score={riskScore} />
                     <hr className="border-panelBorder" />
-                    <ConfidenceGauge percentage={wsData?.confidence ?? 94} />
+                    <ConfidenceGauge percentage={confidence} />
                 </div>
 
                 {/* Tactical Feed Switchboard */}
@@ -224,22 +578,38 @@ export default function DashboardPage() {
                             </button>
                         </div>
                         <div className="flex flex-col gap-2 max-h-56 overflow-y-auto">
-                            {localCams.map(cam => (
-                                <button
-                                    key={cam.id}
-                                    onClick={() => setSelectedCamStream(cam.id)}
-                                    className={`flex justify-between items-center p-3 rounded-lg border text-sm font-semibold transition-all ${selectedCamStream === cam.id
-                                        ? 'bg-slate-900 border-accentCyan text-white shadow-[0_0_8px_rgba(0,229,255,0.15)]'
-                                        : 'bg-bgSecondary/30 border-panelBorder text-textMuted hover:border-slate-700 hover:text-white'
-                                        }`}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <Video className="w-4 h-4 text-textMuted" />
-                                        <span>{cam.name}</span>
+                            {localCams.map(cam => {
+                                const isSelected = selectedCamStream === cam.id;
+                                const SourceIcon = cam.type === 'USB_WEBCAM' ? Video : cam.type === 'MOBILE_CAMERA' ? Smartphone : Camera;
+                                return (
+                                    <div
+                                        key={cam.id}
+                                        onClick={() => setSelectedCamStream(cam.id)}
+                                        className={`flex justify-between items-center p-3 rounded-lg border text-sm font-semibold transition-all cursor-pointer ${isSelected
+                                            ? 'bg-slate-900 border-accentCyan text-white shadow-[0_0_8px_rgba(0,229,255,0.15)]'
+                                            : 'bg-bgSecondary/30 border-panelBorder text-textMuted hover:border-slate-700 hover:text-white'
+                                            }`}
+                                    >
+                                        <div className="flex items-center gap-2.5 overflow-hidden">
+                                            <SourceIcon className={`w-4 h-4 shrink-0 ${cam.type === 'USB_WEBCAM' ? 'text-statusGreen' : cam.type === 'MOBILE_CAMERA' ? 'text-statusOrange' : 'text-accentCyan'}`} />
+                                            <div className="flex flex-col truncate">
+                                                <span className="truncate text-white text-xs">{cam.name}</span>
+                                                <span className="text-[10px] font-mono text-textMuted tracking-tight">{cam.zone} • {cam.type || 'IP_CAMERA'}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <span className={`w-2 h-2 rounded-full ${cam.status === 'ACTIVE' ? 'bg-statusGreen' : 'bg-statusRed'}`}></span>
+                                            <button
+                                                onClick={(e) => handleDeleteCamera(e, cam.id)}
+                                                className="text-slate-500 hover:text-statusRed transition-colors p-1"
+                                                title="Delete camera"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
                                     </div>
-                                    <span className={`w-2.5 h-2.5 rounded-full ${cam.status === 'ACTIVE' ? 'bg-statusGreen' : 'bg-statusRed'}`}></span>
-                                </button>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
 
@@ -250,17 +620,31 @@ export default function DashboardPage() {
                                     <span className="text-[10px] text-accentCyan font-bold tracking-widest font-mono">STREAMING: {selectedCamStream}</span>
                                     <button onClick={() => setSelectedCamStream(null)} className="text-textMuted text-xs hover:text-white">close</button>
                                 </div>
-                                <div className="h-28 rounded bg-black relative flex items-center justify-center overflow-hidden">
+                                <div className="h-36 rounded bg-black relative flex items-center justify-center overflow-hidden">
+                                    <img
+                                        src={`http://localhost:8000/cameras/${selectedCamStream}/feed`}
+                                        alt="Live Feed"
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                            e.target.onerror = null;
+                                            e.target.style.display = 'none';
+                                            e.target.nextSibling.style.display = 'flex';
+                                        }}
+                                    />
+                                    <div className="absolute inset-0 hidden flex-col items-center justify-center bg-slate-950/90 text-textMuted p-2 text-center">
+                                        <Video className="w-6 h-6 mb-1 text-slate-600" />
+                                        <span className="text-[10px] font-mono text-slate-400">Stream Initializing / Reconnecting...</span>
+                                    </div>
                                     <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px] pointer-events-none"></div>
-                                    <span className="text-[10px] text-statusGreen font-mono uppercase tracking-wider animate-pulse flex items-center gap-1.5">
-                                        <span className="w-1.5 h-1.5 bg-statusGreen rounded-full"></span> analyzing video feeds
+                                    <span className="absolute bottom-2 left-2 text-[9px] bg-black/60 px-2 py-0.5 rounded text-statusGreen font-mono uppercase tracking-wider flex items-center gap-1 backdrop-blur-sm">
+                                        <span className="w-1.5 h-1.5 bg-statusGreen rounded-full animate-pulse"></span> LIVE INGEST
                                     </span>
                                 </div>
                             </div>
                         ) : (
                             <div className="mt-2 p-4 border border-dashed border-panelBorder rounded-lg text-center text-textMuted text-xs flex flex-col items-center justify-center">
                                 <Video className="w-6 h-6 mb-1 text-slate-700" />
-                                Select camera to preview RTSP analytics.
+                                Select camera to preview live stream analytics.
                             </div>
                         )}
                     </div>
@@ -270,10 +654,10 @@ export default function DashboardPage() {
                 <div className="glass-card rounded-xl p-5 border border-panelBorder flex flex-col">
                     <h3 className="font-outfit font-semibold text-white mb-4">Urgent Alerts Console</h3>
                     <div className="flex flex-col gap-3 overflow-y-auto max-h-72 pr-1">
-                        {localAlerts.length === 0 ? (
+                        {displayAlerts.length === 0 ? (
                             <p className="text-xs text-textMuted text-center my-6">No active alert logs.</p>
                         ) : (
-                            localAlerts.map(alert => (
+                            displayAlerts.map(alert => (
                                 <div
                                     key={alert.id}
                                     className={`p-3 rounded-lg border text-xs flex flex-col gap-2 transition-all ${alert.acknowledged
@@ -287,7 +671,7 @@ export default function DashboardPage() {
                                         <span className={`font-bold uppercase tracking-wider font-mono ${alert.level === 'RED' ? 'text-statusRed' : 'text-statusYellow'}`}>{alert.level} ANOMALY</span>
                                         <span className="text-[10px] text-textMuted">{alert.time}</span>
                                     </div>
-                                    <p className="text-slate-300 font-medium">{alert.message}</p>
+                                    <p className="text-slate-300 font-medium">{typeof alert.message === 'string' ? alert.message : (alert.message?.message || alert.explanation || "Real-time anomaly detected.")}</p>
                                     <div className="flex justify-between items-center mt-1">
                                         <span className="text-[10px] text-textMuted uppercase tracking-wider font-semibold font-mono">Conf: {alert.confidence}%</span>
                                         {!alert.acknowledged && (
@@ -356,59 +740,79 @@ export default function DashboardPage() {
 
             </div>
 
-            {/* ALERTS MODAL FOR LEVEL RED */}
-            {triggerCriticalAlert && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn">
-                    <div className="max-w-md w-full bg-slate-950 border-2 border-statusRed rounded-xl shadow-[0_0_30px_rgba(239,68,68,0.4)] overflow-hidden scale-100 animate-slideUp">
-                        <div className="bg-statusRed text-white p-4 flex items-center justify-between">
-                            <div className="flex items-center gap-2 font-outfit font-bold">
-                                <AlertTriangle className="w-5 h-5 text-white" />
-                                <span>CRITICAL RISK THRESHOLD EXPELLED</span>
-                            </div>
-                        </div>
-                        <div className="p-6 flex flex-col gap-4 text-center">
-                            <p className="text-sm text-slate-300">
-                                The centralized monitoring engine has flagged crowd densities breaching safe thresholds at critical checkpoint corridors. Enact override safety parameters.
-                            </p>
-                            <div className="bg-slate-900 border border-panelBorder p-4 rounded-lg text-left text-xs font-mono text-statusRed">
-                                <p>⚠️ INDEX SCORE: {wsData?.risk_score ?? "RED_CRITICAL_89"}</p>
-                                <p className="mt-1">🕵️ ACTIVE HEADCOUNT: {crowdCount} PEOPLES</p>
-                                <div className="mt-2 border-t border-panelBorder/40 pt-2 text-textMuted">
-                                    {systemAlerts.map((a, i) => (
-                                        <p key={i} className="text-slate-400">» {a}</p>
-                                    ))}
-                                </div>
-                            </div>
-                            <button
-                                onClick={handleAcknowledgeEmergency}
-                                className="w-full bg-statusRed hover:bg-red-700 text-white font-bold py-3.5 rounded-lg text-sm transition-all"
-                            >
-                                Acknowledge Emergency Action
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
-            {/* CREATE CAMERA STREAM MODAL */}
+
+            {/* CREATE CAMERA STREAM MODAL - END TO END MULTI-SOURCE SUPPORT */}
             {showAddCamModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-                    <div className="max-w-sm w-full bg-bgSecondary border border-panelBorder rounded-xl overflow-hidden">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
+                    <div className="max-w-md w-full bg-bgSecondary border border-panelBorder rounded-xl overflow-hidden shadow-2xl">
                         <div className="border-b border-panelBorder px-5 py-4 flex justify-between items-center">
-                            <h3 className="font-outfit font-semibold text-white">Add Device Stream</h3>
-                            <button onClick={() => setShowAddCamModal(false)} className="text-xs text-textMuted hover:text-white">Cancel</button>
+                            <div className="flex items-center gap-2">
+                                <Camera className="w-4 h-4 text-accentCyan" />
+                                <h3 className="font-outfit font-semibold text-white text-sm">Register Device Camera Source</h3>
+                            </div>
+                            <button onClick={() => setShowAddCamModal(false)} className="text-xs text-textMuted hover:text-white transition-colors">Cancel</button>
                         </div>
                         <form onSubmit={handleAddCamera} className="p-5 flex flex-col gap-4">
+                            {formError && (
+                                <div className="p-2.5 bg-statusRed/10 border border-statusRed/30 rounded-lg text-statusRed text-xs font-mono">
+                                    {formError}
+                                </div>
+                            )}
+
+                            {/* SOURCE TYPE SELECTOR TABS */}
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-[10px] uppercase font-bold text-textMuted tracking-wider">Camera Source Type</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setNewCamSourceType('IP_CAMERA'); setNewCamSourceLoc(''); }}
+                                        className={`flex flex-col items-center justify-center p-2.5 rounded-lg border text-xs font-semibold gap-1.5 transition-all ${newCamSourceType === 'IP_CAMERA'
+                                            ? 'bg-accentCyan/15 border-accentCyan text-white shadow-[0_0_10px_rgba(0,229,255,0.2)]'
+                                            : 'bg-bgPrimary border-panelBorder text-textMuted hover:border-slate-700 hover:text-white'
+                                            }`}
+                                    >
+                                        <Camera className="w-4 h-4 text-accentCyan" />
+                                        <span>IP Camera</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setNewCamSourceType('USB_WEBCAM'); setNewCamSourceLoc('0'); }}
+                                        className={`flex flex-col items-center justify-center p-2.5 rounded-lg border text-xs font-semibold gap-1.5 transition-all ${newCamSourceType === 'USB_WEBCAM'
+                                            ? 'bg-statusGreen/15 border-statusGreen text-white shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+                                            : 'bg-bgPrimary border-panelBorder text-textMuted hover:border-slate-700 hover:text-white'
+                                            }`}
+                                    >
+                                        <Video className="w-4 h-4 text-statusGreen" />
+                                        <span>USB Webcam</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setNewCamSourceType('MOBILE_CAMERA'); setNewCamSourceLoc(''); }}
+                                        className={`flex flex-col items-center justify-center p-2.5 rounded-lg border text-xs font-semibold gap-1.5 transition-all ${newCamSourceType === 'MOBILE_CAMERA'
+                                            ? 'bg-statusOrange/15 border-statusOrange text-white shadow-[0_0_10px_rgba(249,115,22,0.2)]'
+                                            : 'bg-bgPrimary border-panelBorder text-textMuted hover:border-slate-700 hover:text-white'
+                                            }`}
+                                    >
+                                        <Smartphone className="w-4 h-4 text-statusOrange" />
+                                        <span>Mobile Cam</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* CAMERA NAME */}
                             <div className="flex flex-col gap-1.5">
                                 <label className="text-[10px] uppercase font-bold text-textMuted tracking-wider">Camera/Stream Identifier</label>
                                 <input
                                     value={newCamName}
                                     onChange={e => setNewCamName(e.target.value)}
                                     className="bg-bgPrimary border border-panelBorder rounded-lg px-3 py-2.5 text-xs text-white outline-none focus:border-accentCyan"
-                                    placeholder="Escalator B Gate Capture"
+                                    placeholder={newCamSourceType === 'USB_WEBCAM' ? 'Front Desk Webcam' : newCamSourceType === 'MOBILE_CAMERA' ? 'Security Patrol Phone' : 'Escalator B Gate Capture'}
                                     required
                                 />
                             </div>
+
+                            {/* COVERAGE ZONE */}
                             <div className="flex flex-col gap-1.5">
                                 <label className="text-[10px] uppercase font-bold text-textMuted tracking-wider">Coverage Region / Zone</label>
                                 <input
@@ -419,20 +823,39 @@ export default function DashboardPage() {
                                     required
                                 />
                             </div>
+
+                            {/* DYNAMIC SOURCE LOCATION INPUT */}
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-[10px] uppercase font-bold text-textMuted tracking-wider">Device RTSP URL (Optional)</label>
+                                <label className="text-[10px] uppercase font-bold text-textMuted tracking-wider font-mono">
+                                    {newCamSourceType === 'IP_CAMERA' && 'Device RTSP Endpoint URL'}
+                                    {newCamSourceType === 'USB_WEBCAM' && 'Webcam Device Index (e.g. 0, 1)'}
+                                    {newCamSourceType === 'MOBILE_CAMERA' && 'Mobile App Stream URL (HTTP / RTSP)'}
+                                </label>
                                 <input
-                                    value={newCamRtsp}
-                                    onChange={e => setNewCamRtsp(e.target.value)}
-                                    className="bg-bgPrimary border border-panelBorder rounded-lg px-3 py-2.5 text-xs text-white outline-none focus:border-accentCyan"
-                                    placeholder="rtsp://10.0.1.66/stream1"
+                                    value={newCamSourceLoc}
+                                    onChange={e => setNewCamSourceLoc(e.target.value)}
+                                    className="bg-bgPrimary border border-panelBorder rounded-lg px-3 py-2.5 text-xs text-white outline-none focus:border-accentCyan font-mono"
+                                    placeholder={
+                                        newCamSourceType === 'IP_CAMERA' ? 'rtsp://10.0.1.66/stream1' :
+                                            newCamSourceType === 'USB_WEBCAM' ? '0' :
+                                                'http://192.168.1.50:8080/video'
+                                    }
                                 />
                             </div>
+
                             <button
                                 type="submit"
-                                className="w-full bg-accentCyan text-bgPrimary font-bold py-3 rounded-lg text-xs mt-2"
+                                disabled={isSubmitting}
+                                className="w-full bg-accentCyan hover:bg-cyan-400 text-bgPrimary font-bold py-3 rounded-lg text-xs mt-2 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                             >
-                                Register Camera
+                                {isSubmitting ? (
+                                    <>
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                        <span>Saving Camera to Database...</span>
+                                    </>
+                                ) : (
+                                    <span>Register &amp; Connect Source</span>
+                                )}
                             </button>
                         </form>
                     </div>

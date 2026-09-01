@@ -22,88 +22,52 @@ export default function ReportsPage() {
     const [report, setReport] = useState(null);
     const [historyCount, setHistoryCount] = useState(0);
 
-    // Helper generators for mock fallback or clean generation
-    const generateTelemetry = (points) => {
-        const list = [];
-        const baseHour = new Date();
-        for (let i = points; i > 0; i--) {
-            const time = new Date(baseHour.getTime() - i * 60 * 1000 * (currentScope === 'hourly' ? 1 : currentScope === 'daily' ? 60 : 1440));
-            const avg = Math.floor(40 + Math.random() * 80);
-            list.push({
-                timestamp: time.toISOString().replace('T', ' ').substring(0, 16),
-                avgCount: avg,
-                peakCount: Math.floor(avg * (1.1 + Math.random() * 0.2)),
-                status: avg > 100 ? 'HEAVY' : avg > 70 ? 'MODERATE' : 'NORMAL'
-            });
-        }
-        return list;
-    };
-
-    const generateIncidents = (points) => {
-        const locations = ["Main Entrance Gate", "Zone B Escalators", "Corridor LinkWAY", "Secure Tunnel 4"];
-        const issues = ["Moderate crowd crowding surge", "Trespass signature detected", "Pedestrian pacing vector drop", "Movement flow stall"];
-        const list = [];
-
-        const count = Math.floor(1 + Math.random() * 4);
-        for (let i = 0; i < count; i++) {
-            const timeOffset = Math.floor(Math.random() * points);
-            const time = new Date(Date.now() - timeOffset * 60 * 1000 * (currentScope === 'hourly' ? 1 : currentScope === 'daily' ? 60 : 1440));
-            list.push({
-                id: `INC-40${i + 1}`,
-                timestamp: time.toISOString().replace('T', ' ').substring(0, 16),
-                location: locations[Math.floor(Math.random() * locations.length)],
-                severity: Math.random() > 0.75 ? 'RED' : 'YELLOW',
-                details: issues[Math.floor(Math.random() * issues.length)],
-                confidence: parseFloat((80 + Math.random() * 19).toFixed(1))
-            });
-        }
-        return list.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    };
-
     const handleGenerateReport = async () => {
         setLoading(true);
-        // Simulating API latency
-        await new Promise(resolve => setTimeout(resolve, 1200));
-
         try {
             const token = localStorage.getItem('nexora_token');
-            // Requesting the report compile from unified gateway (port 8000)
-            const response = await fetch(`http://localhost:8000/reports/generate`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ scope: currentScope })
-            });
+            let response;
+            try {
+                response = await fetch(`http://localhost:8000/reports/generate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ scope: currentScope.toUpperCase() })
+                });
+            } catch {
+                response = await fetch(`http://127.0.0.1:8000/reports/generate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ scope: currentScope.toUpperCase() })
+                });
+            }
 
             if (!response.ok) throw new Error('Gateway reported error');
             const data = await response.json();
             setReport(data);
             setHistoryCount(prev => prev + 1);
         } catch (err) {
-            // Fallback Seed Data Generation
-            console.warn('[Reports] API error encounter. Activating mock compile routine:', err);
-            const points = currentScope === 'hourly' ? 60 : currentScope === 'daily' ? 24 : 7;
-            const telemetry = generateTelemetry(points);
-            const incidents = generateIncidents(points);
-
-            const totalAvg = Math.floor(telemetry.reduce((sum, item) => sum + item.avgCount, 0) / telemetry.length);
-            const maxPeak = Math.max(...telemetry.map(item => item.peakCount));
-            const redCount = incidents.filter(i => i.severity === 'RED').length;
-
+            console.warn('[Reports] API endpoint request failed:', err);
             setReport({
                 id: `REP-${Math.floor(100000 + Math.random() * 900000)}`,
                 scope: currentScope,
                 generatedAt: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC',
+                has_data: false,
                 summary: {
-                    average_headcount: totalAvg,
-                    peak_headcount: maxPeak,
-                    critical_incidents_recorded: redCount,
-                    device_coverage_uptime: '99.8%'
+                    average_headcount: 0,
+                    peak_headcount: 0,
+                    critical_incidents_recorded: 0,
+                    device_coverage_uptime: '0%',
+                    has_data: false,
+                    status_message: "Insufficient real-time telemetry recorded for selected scope"
                 },
-                telemetry: telemetry,
-                incidents: incidents
+                telemetry: [],
+                incidents: []
             });
             setHistoryCount(prev => prev + 1);
         } finally {
@@ -262,21 +226,29 @@ export default function ReportsPage() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {report.telemetry.slice(0, 10).map((t, idx) => (
-                                            <tr key={idx} className="border-b border-panelBorder/40 hover:bg-slate-900/20 print:border-slate-200">
-                                                <td className="py-2.5 px-3 font-mono text-slate-300 print:text-black">{t.timestamp}</td>
-                                                <td className="py-2.5 px-3 text-white print:text-black font-semibold">{t.avgCount}</td>
-                                                <td className="py-2.5 px-3 text-slate-350 print:text-slate-700">{t.peakCount}</td>
-                                                <td className="py-2.5 px-3 font-bold">
-                                                    <span className={`px-2 py-0.5 rounded text-[10px] ${t.status === 'HEAVY' ? 'bg-statusRed/10 text-statusRed' :
-                                                        t.status === 'MODERATE' ? 'bg-statusYellow/10 text-statusYellow' :
-                                                            'bg-statusGreen/10 text-statusGreen'
-                                                        }`}>
-                                                        {t.status}
-                                                    </span>
+                                        {report.telemetry.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="4" className="py-6 text-center text-textMuted text-xs font-mono">
+                                                    Insufficient real-time telemetry recorded for selected scope
                                                 </td>
                                             </tr>
-                                        ))}
+                                        ) : (
+                                            report.telemetry.slice(0, 10).map((t, idx) => (
+                                                <tr key={idx} className="border-b border-panelBorder/40 hover:bg-slate-900/20 print:border-slate-200">
+                                                    <td className="py-2.5 px-3 font-mono text-slate-300 print:text-black">{t.timestamp}</td>
+                                                    <td className="py-2.5 px-3 text-white print:text-black font-semibold">{t.avgCount}</td>
+                                                    <td className="py-2.5 px-3 text-slate-350 print:text-slate-700">{t.peakCount}</td>
+                                                    <td className="py-2.5 px-3 font-bold">
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] ${t.status === 'HEAVY' ? 'bg-statusRed/10 text-statusRed' :
+                                                            t.status === 'MODERATE' ? 'bg-statusYellow/10 text-statusYellow' :
+                                                                'bg-statusGreen/10 text-statusGreen'
+                                                            }`}>
+                                                            {t.status}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
                                     </tbody>
                                 </table>
                             </div>

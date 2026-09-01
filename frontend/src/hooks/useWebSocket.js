@@ -1,105 +1,238 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 /**
- * Reusable React Hook for managing robust WebSocket connections with automatic
- * Exponential Backoff reconnect controls.
+ * Reusable React Hook for managing robust WebSocket connections with:
+ *  - Automatic Exponential Backoff reconnect for transient failures.
+ *  - Auth-failure detection: on close code 1008 (policy violation / expired JWT)
+ *    the hook stops blind retrying, attempts a silent token refresh via
+ *    POST /auth/token/refresh, updates localStorage, and reconnects with the new token.
+ *    If the refresh itself fails the hook dispatches a `nexora_auth_expired` window
+ *    event so the app can redirect the user to the login page.
  *
- * Requirements satisfied:
- * - Detects unexpected disconnections.
- * - Auto-reconnect delay progression: 2s, 4s, 8s, 16s, max 30s.
- * - Resets retry counter on successful connection.
- * - Four states: Connected, Connecting, Reconnecting, Offline.
- * - Cache preservation: retains last telemetry frame during disconnect sweeps.
- * - Diagnostic events logging.
+ * States: 'Connected' | 'Connecting' | 'Reconnecting' | 'Offline' | 'AuthFailed'
  */
 export function useWebSocket(url, token = null) {
     const [data, setData] = useState(null);
-    const [status, setStatus] = useState('Connecting'); // 'Connected', 'Connecting', 'Reconnecting', 'Offline'
+    const [status, setStatus] = useState('Connecting');
     const [error, setError] = useState(null);
 
     const socketRef = useRef(null);
     const retryCountRef = useRef(0);
     const reconnectTimeoutRef = useRef(null);
     const isExplicitCloseRef = useRef(false);
+    const isRefreshingRef = useRef(false);
+    // Keep a mutable copy of the latest token so the refresh flow can update it
+    // without needing to recreate the entire connect callback.
+    const currentTokenRef = useRef(token);
 
-    // Formulate absolute WS URL with authentication Token
-    const getFullUrl = useCallback(() => {
+    // Keep the ref in sync with the prop each render.
+    useEffect(() => {
+        currentTokenRef.current = token;
+    }, [token]);
+
+    // ----------------------------------------------------------------
+    // Helper: build full WS URL with auth token query param
+    // ----------------------------------------------------------------
+    const buildUrl = useCallback((tkn) => {
         if (!url) return '';
-        if (!token) return url;
-        const separator = url.includes('?') ? '&' : '?';
-        return `${url}${separator}token=${token}`;
-    }, [url, token]);
+        if (!tkn) return url;
+        const sep = url.includes('?') ? '&' : '?';
+        return `${url}${sep}token=${tkn}`;
+    }, [url]);
 
-    const connect = useCallback(() => {
-        // Clear any pending reconnect timers
+    // ----------------------------------------------------------------
+    // Helper: attempt silent token refresh via /auth/token/refresh
+    // Returns the new access token on success, null on failure.
+    // ----------------------------------------------------------------
+    const silentRefresh = useCallback(async () => {
+        const refreshToken = localStorage.getItem('nexora_refresh_token');
+        if (!refreshToken) return null;
+
+        console.log('[WebSocket] Attempting silent token refresh...');
+        try {
+            let res;
+            try {
+                res = await fetch('http://localhost:8000/auth/token/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refreshToken }),
+                });
+            } catch {
+                res = await fetch('http://127.0.0.1:8000/auth/token/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refreshToken }),
+                });
+            }
+
+            if (!res || !res.ok) {
+                console.warn('[WebSocket] Silent refresh failed — server rejected refresh token:', res?.status);
+                return null;
+            }
+
+            const payload = await res.json();
+            const newAccess = payload?.access_token;
+            const newRefresh = payload?.refresh_token;
+
+            if (!newAccess) {
+                console.warn('[WebSocket] Silent refresh failed — no access_token in response.');
+                return null;
+            }
+
+            // Persist the rotated tokens
+            localStorage.setItem('nexora_token', newAccess);
+            if (newRefresh) {
+                localStorage.setItem('nexora_refresh_token', newRefresh);
+            }
+            currentTokenRef.current = newAccess;
+            console.log('[WebSocket] Silent refresh succeeded — new access token stored.');
+            return newAccess;
+        } catch (err) {
+            console.error('[WebSocket] Silent refresh network error:', err);
+            return null;
+        }
+    }, []);
+
+    // Helper: decode JWT payload without library to check exp claim
+    const isTokenExpired = useCallback((tkn) => {
+        if (!tkn) return true;
+        try {
+            const parts = tkn.split('.');
+            if (parts.length !== 3) return true;
+            const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+            if (!payload.exp) return false;
+            // Consider token expired if within 10 seconds of exp
+            return payload.exp * 1000 <= Date.now() + 10000;
+        } catch {
+            return true;
+        }
+    }, []);
+
+    // ----------------------------------------------------------------
+    // Core connect function
+    // ----------------------------------------------------------------
+    const connect = useCallback(async (overrideToken) => {
         if (reconnectTimeoutRef.current) {
             clearTimeout(reconnectTimeoutRef.current);
             reconnectTimeoutRef.current = null;
         }
 
-        const fullUrl = getFullUrl();
+        let tkn = overrideToken !== undefined ? overrideToken : currentTokenRef.current;
+        if (!tkn) {
+            tkn = localStorage.getItem('nexora_token');
+        }
+
+        // Pro-actively check if the access token is expired BEFORE initiating WS connection
+        if (tkn && isTokenExpired(tkn)) {
+            console.warn('[WebSocket] Access token is expired. Attempting silent refresh before connecting...');
+            if (!isRefreshingRef.current) {
+                isRefreshingRef.current = true;
+                tkn = await silentRefresh();
+                isRefreshingRef.current = false;
+            }
+            if (!tkn) {
+                console.error('[WebSocket] Token refresh failed. Redirecting to login.');
+                localStorage.removeItem('nexora_token');
+                localStorage.removeItem('nexora_refresh_token');
+                setStatus('AuthFailed');
+                window.dispatchEvent(new CustomEvent('nexora_auth_expired', {
+                    detail: { reason: 'WebSocket auth token expired and refresh failed.' }
+                }));
+                return;
+            }
+        }
+
+        const fullUrl = buildUrl(tkn);
         if (!fullUrl) return;
 
         isExplicitCloseRef.current = false;
+        setStatus(retryCountRef.current > 0 ? 'Reconnecting' : 'Connecting');
 
-        // Update status to reflecting Connecting or Reconnecting
-        setStatus((prev) => (retryCountRef.current > 0 ? 'Reconnecting' : 'Connecting'));
-
-        console.log(`[WebSocket] Initiating connection to: ${url}`);
-        if (retryCountRef.current > 0) {
-            console.log(`[WebSocket] Reconnect attempt #${retryCountRef.current}`);
-        }
+        console.log(`[WebSocket] Connecting to: ${url}${retryCountRef.current > 0 ? ` (retry #${retryCountRef.current})` : ''}`);
 
         try {
             const ws = new WebSocket(fullUrl);
             socketRef.current = ws;
 
             ws.onopen = () => {
-                console.log('[WebSocket] Connection opened successfully.');
-                if (retryCountRef.current > 0) {
-                    console.log('[WebSocket] Reconnect success achieved.');
-                }
+                console.log('[WebSocket] Connection established.');
                 setStatus('Connected');
                 setError(null);
-                retryCountRef.current = 0; // Reset retry counter on success
+                retryCountRef.current = 0;
+                isRefreshingRef.current = false;
             };
 
             ws.onmessage = (event) => {
                 try {
-                    const parsed = JSON.parse(event.data);
-                    setData(parsed); // Updates message payload cache
+                    setData(JSON.parse(event.data));
                 } catch (err) {
-                    console.error('[WebSocket] Parsing message error:', err);
+                    console.error('[WebSocket] Message parse error:', err);
                 }
             };
 
-            ws.onerror = (err) => {
-                console.error('[WebSocket] Connection error event encountered:', err);
-                setError(err);
+            ws.onerror = (evt) => {
+                console.error('[WebSocket] Socket error:', evt);
+                setError(evt);
             };
 
-            ws.onclose = (event) => {
-                console.log(`[WebSocket] Connection closed. Code: ${event.code}, Clean: ${event.wasClean}`);
+            ws.onclose = async (event) => {
+                const { code, reason, wasClean } = event;
+                console.log(`[WebSocket] Closed — code=${code} clean=${wasClean} reason="${reason}"`);
 
-                // Block auto-reconnect if closed intentionally by the client/operator
+                // Intentional close — do not reconnect.
                 if (isExplicitCloseRef.current) {
                     setStatus('Offline');
                     return;
                 }
 
-                // Determine reconnect delays using Exponential Backoff: 2s, 4s, 8s, 16s, capped at 30s
+                // --------------------------------------------------------
+                // Auth failure path: code 1008 = Policy Violation, or code 1006 with an expired token
+                // --------------------------------------------------------
+                const activeToken = currentTokenRef.current || localStorage.getItem('nexora_token');
+                if (code === 1008 || (code === 1006 && isTokenExpired(activeToken))) {
+                    // Guard: only one refresh attempt at a time.
+                    if (isRefreshingRef.current) return;
+                    isRefreshingRef.current = true;
+                    setStatus('Reconnecting');
+                    console.warn(`[WebSocket] Auth rejected or expired token (code ${code}). Attempting token refresh before reconnect.`);
+
+                    const newToken = await silentRefresh();
+                    isRefreshingRef.current = false;
+
+                    if (newToken) {
+                        // Reset retry counter — this isn't a transient network failure.
+                        retryCountRef.current = 0;
+                        reconnectTimeoutRef.current = setTimeout(() => {
+                            connect(newToken);
+                        }, 1000);
+                    } else {
+                        // Refresh failed — session is truly expired.
+                        console.error('[WebSocket] Token refresh failed. Session expired. Redirecting to login.');
+                        localStorage.removeItem('nexora_token');
+                        localStorage.removeItem('nexora_refresh_token');
+                        setStatus('AuthFailed');
+                        // Signal the app to redirect to login.
+                        window.dispatchEvent(new CustomEvent('nexora_auth_expired', {
+                            detail: { reason: 'WebSocket auth token expired and refresh failed.' }
+                        }));
+                    }
+                    return;
+                }
+
+                // --------------------------------------------------------
+                // Transient failure path: exponential backoff reconnect.
+                // --------------------------------------------------------
                 retryCountRef.current += 1;
                 const delay = Math.min(Math.pow(2, retryCountRef.current) * 1000, 30000);
 
-                console.log(`[WebSocket] Reconnect failure. Next attempt scheduled in ${delay / 1000}s`);
-
-                if (delay >= 30000 && retryCountRef.current > 6) {
-                    // If retries keep failing extensively, flag as Offline eventually
+                if (retryCountRef.current > 8) {
+                    console.error('[WebSocket] Max retries exceeded. Giving up.');
                     setStatus('Offline');
-                } else {
-                    setStatus('Reconnecting');
+                    return;
                 }
 
+                console.log(`[WebSocket] Reconnecting in ${delay / 1000}s (attempt #${retryCountRef.current}).`);
+                setStatus('Reconnecting');
                 reconnectTimeoutRef.current = setTimeout(() => {
                     connect();
                 }, delay);
@@ -109,8 +242,11 @@ export function useWebSocket(url, token = null) {
             setStatus('Offline');
             setError(err);
         }
-    }, [getFullUrl, url]);
+    }, [buildUrl, silentRefresh, url]);
 
+    // ----------------------------------------------------------------
+    // Manual disconnect
+    // ----------------------------------------------------------------
     const disconnect = useCallback(() => {
         isExplicitCloseRef.current = true;
         if (reconnectTimeoutRef.current) {
@@ -118,33 +254,50 @@ export function useWebSocket(url, token = null) {
             reconnectTimeoutRef.current = null;
         }
         if (socketRef.current) {
-            console.log('[WebSocket] Disconnecting client connection context...');
+            console.log('[WebSocket] Disconnecting...');
             socketRef.current.close();
             socketRef.current = null;
         }
         setStatus('Offline');
     }, []);
 
+    // ----------------------------------------------------------------
+    // Send helper
+    // ----------------------------------------------------------------
     const sendMessage = useCallback((msg) => {
         if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
             socketRef.current.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
             return true;
         }
-        console.warn('[WebSocket] Cannot send message: client socket offline.');
+        console.warn('[WebSocket] Cannot send — socket not open.');
         return false;
     }, []);
 
+    // ----------------------------------------------------------------
+    // Mount: initiate connection; unmount: clean up.
+    // Re-connect whenever URL or token changes.
+    // ----------------------------------------------------------------
     useEffect(() => {
-        connect();
-        return () => {
-            // Clean up on component unmount
+        // Close any existing socket cleanly before opening a new one.
+        if (socketRef.current) {
             isExplicitCloseRef.current = true;
-            if (reconnectTimeoutRef.current) {
-                clearTimeout(reconnectTimeoutRef.current);
-            }
-            if (socketRef.current) {
-                socketRef.current.close();
-            }
+            socketRef.current.close();
+            socketRef.current = null;
+        }
+        if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+        }
+        retryCountRef.current = 0;
+        isExplicitCloseRef.current = false;
+        isRefreshingRef.current = false;
+
+        connect();
+
+        return () => {
+            isExplicitCloseRef.current = true;
+            if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+            if (socketRef.current) socketRef.current.close();
         };
     }, [connect]);
 
@@ -153,7 +306,7 @@ export function useWebSocket(url, token = null) {
         data,
         error,
         sendMessage,
-        reconnect: connect,
+        reconnect: () => { retryCountRef.current = 0; connect(); },
         disconnect,
     };
 }

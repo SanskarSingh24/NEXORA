@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/map", tags=["map"])
 def map_summary() -> dict:
     return {
         "crowd_count": 118,
-        "risk_level": "MEDIUM",
+        "risk_level": "MODERATE",
         "zone": "Central Concourse",
         "camera_count": 4,
     }
@@ -25,7 +25,7 @@ async def map_stream(websocket: WebSocket) -> None:
                 "type": "telemetry",
                 "timestamp": time.time(),
                 "crowd_count": 118,
-                "risk_level": "MEDIUM",
+                "risk_level": "MODERATE",
                 "alerts": ["Crowd pressure rising near North Corridor"],
             }
             await websocket.send_text(json.dumps(payload))

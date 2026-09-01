@@ -10,7 +10,7 @@ import os
 
 from config.settings import settings
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 import numpy as np
@@ -287,6 +287,40 @@ def trigger_training():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Model training pipeline failed: {e}"
         )
+
+
+def predict_risk_from_metrics(
+    density: float,
+    speed: float = 1.2,
+    entry_rate: float = 0.0,
+    exit_rate: float = 0.0,
+    flow_angle: float = 0.0,
+    queue_length: int = 0,
+    occupancy: float = 40.0
+) -> Tuple[str, float, float]:
+    """
+    Evaluates real-time vision engine telemetry metrics through XGBoost ML model or Rule-Based fallback.
+    Returns: (risk_level, risk_score, confidence)
+    """
+    inp = PredictionInput(
+        density=density,
+        speed=speed,
+        entry_rate=entry_rate,
+        exit_rate=exit_rate,
+        flow_direction_angle=flow_angle,
+        queue_length=queue_length,
+        occupancy=occupancy
+    )
+    res = predict_crowd_risk(inp)
+    
+    # Calculate continuous 0-100 risk score dynamically derived from risk class, density, queue, speed & occupancy
+    class_bonus = res.risk_class_id * 22.0
+    base_score = 10.0 + class_bonus + (density * 6.5) + (queue_length * 0.4) + (occupancy * 0.1)
+    if speed < 0.6:
+        base_score += (0.6 - speed) * 15.0
+    risk_score = round(min(100.0, max(5.0, base_score)), 1)
+    
+    return res.risk_level, risk_score, res.confidence_score
 
 
 # =====================================================================

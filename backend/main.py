@@ -25,6 +25,7 @@ from backend.map.map_server import app as map_app, coordinate_broadcast_loop
 from backend.ai.predictive_engine import app as predictive_app, load_trained_model
 from backend.ai.explainable_api import app as explainable_app
 from backend.reports.report_service import app as report_app
+from backend.alerts.alert_service import app as alert_app
 
 # Structured Logging
 logging.basicConfig(
@@ -113,6 +114,7 @@ app.include_router(map_app.router)
 app.include_router(predictive_app.router)
 app.include_router(explainable_app.router)
 app.include_router(report_app.router)
+app.include_router(alert_app.router)
 
 
 @app.get("/health")

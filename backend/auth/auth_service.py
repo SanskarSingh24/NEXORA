@@ -6,6 +6,7 @@ Description: Production-ready Python FastAPI service implementing secure JWT log
 """
 
 import os  # retained for other stdlib uses
+import secrets
 
 from config.settings import settings
 import re
@@ -14,20 +15,25 @@ import logging
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Dict, List, Optional, Set
-from uuid import UUID, uuid4
+
+from uuid import UUID, uuid4, uuid5, NAMESPACE_DNS
 
 from fastapi import Depends, FastAPI, HTTPException, Security, status, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
 from jose.exceptions import ExpiredSignatureError
+# pyrefly: ignore [missing-import]
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field, validator
+
+from backend.auth.email_service import send_verification_email, send_password_reset_email
 
 try:
     import bcrypt
 except ImportError:  # pragma: no cover - runtime fallback
     bcrypt = None
+
 
 # =====================================================================
 # 0. LOW-LATENCY AUDIT LOGGING SYSTEM
@@ -102,6 +108,7 @@ class UserResponse(BaseModel):
     email: str
     role: UserRole
     is_active: bool
+    is_verified: bool = True
     created_at: datetime
 
 
@@ -116,17 +123,46 @@ class TokenRefreshRequest(BaseModel):
     refresh_token: str
 
 
+class ResendVerificationRequest(BaseModel):
+    email: str
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8)
+
+    @validator("new_password")
+    def validate_password_strength(cls, v):
+        """Enforce the same strong password policy as UserCreate."""
+        if not re.search(r"[A-Z]", v) or not re.search(r"[a-z]", v) or not re.search(r"[0-9]", v):
+            raise ValueError("Password must contain at least one uppercase letter, one lowercase letter, and one number.")
+        return v
+
+
 # In-memory storage components for mock/demonstration purposes.
 # In a production environment, this is replaced by database calls (PostgreSQL/Redis).
 USER_DB: Dict[str, dict] = {}
 REFRESH_TOKEN_STORE: Dict[str, str] = {}  # refresh_token -> user_id
+VERIFICATION_TOKEN_STORE: Dict[str, str] = {}  # verification_token -> email
 TOKEN_BLACKLIST: Set[str] = set()
+
+# Maps reset_token -> { "email": str, "expires_at": float (Unix timestamp) }
+PASSWORD_RESET_TOKEN_STORE: Dict[str, dict] = {}
+PASSWORD_RESET_EXPIRY_SECONDS: int = 15 * 60  # 15 minutes
 
 # ─── Seed a default admin account for development / demo ────────────────────
 # Credentials: username=admin  password=StrongPass1
 # These match the pre-filled values in react_dashboard.html.
 def _seed_default_users() -> None:
-    from uuid import uuid4
+    from uuid import uuid4 ,uuid5, NAMESPACE_DNS
     from datetime import datetime, timezone
     _ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
     _users = [
@@ -158,12 +194,13 @@ def _seed_default_users() -> None:
     for u in _users:
         if u["email"] not in USER_DB:
             USER_DB[u["email"]] = {
-                "user_id": uuid4(),
+                "user_id":  uuid5(NAMESPACE_DNS, u["email"]),
                 "username": u["username"],
                 "email": u["email"],
                 "password_hash": _ctx.hash(u["password"]),
                 "role": u["role"],
                 "is_active": True,
+                "is_verified": True,
                 "created_at": datetime.now(timezone.utc),
             }
 
@@ -462,10 +499,12 @@ async def register(user_in: UserCreate):
     if user_in.email in USER_DB:
         logger.warning(f"Audit Trail: Registration FAILED. Email overlap: {user_in.email}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_LENGTH,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Integrity violation: Target email registry already exists.",
         )
         
+    verification_token = secrets.token_urlsafe(32)
+
     new_user = {
         "user_id": uuid4(),
         "username": user_in.username,
@@ -473,10 +512,17 @@ async def register(user_in: UserCreate):
         "password_hash": AuthenticationManager.hash_password(user_in.password),
         "role": user_in.role,
         "is_active": True,
+        "is_verified": False,
+        "verification_token": verification_token,
         "created_at": datetime.now(timezone.utc),
     }
     
     USER_DB[user_in.email] = new_user
+    VERIFICATION_TOKEN_STORE[verification_token] = user_in.email
+
+    # Dispatch verification email via SMTP
+    send_verification_email(user_in.email, verification_token)
+
     logger.info(f"Audit Trail: Registration SUCCESS for ID: {new_user['user_id']} ({user_in.email})")
     return UserResponse(**new_user)
 
@@ -508,7 +554,15 @@ async def login(username_email: str, password_raw: str):
             detail="User status suspended. Access denied.",
         )
         
+    if not user.get("is_verified", True):
+        logger.warning(f"Audit Trail: Login BLOCKED (Unverified profile) for: {username_email}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email address not verified. Please verify your email address before logging in.",
+        )
+
     user_id_str = str(user["user_id"])
+
     
     # Create Tokens
     access_token = AuthenticationManager.create_jwt_token(
@@ -610,6 +664,172 @@ async def logout(
         del REFRESH_TOKEN_STORE[ref_token]
         
     return {"status": "SUCCESS", "message": "Tokens revoked. Operator session terminated."}
+
+
+@app.get("/auth/verify-email", dependencies=[Depends(enforce_rate_limit)])
+@app.post("/auth/verify-email", dependencies=[Depends(enforce_rate_limit)])
+async def verify_email(token: Optional[str] = None, payload: Optional[VerifyEmailRequest] = None):
+    """Validates the email verification token and activates the target account."""
+    target_token = token or (payload.token if payload else None)
+    if not target_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification token is required.",
+        )
+        
+    email = VERIFICATION_TOKEN_STORE.get(target_token)
+    if not email or email not in USER_DB:
+        # Check if this token was already used to verify an account
+        already_verified = [u for u in USER_DB.values() if u.get("last_verified_token") == target_token]
+        if already_verified:
+            logger.info(f"Audit Trail: Duplicate verification request for already-verified account: {already_verified[0]['email']}")
+            return {"status": "SUCCESS", "message": "Email address is already verified. You may now log in."}
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification token.",
+        )
+
+    user = USER_DB[email]
+    user["is_verified"] = True
+    user["last_verified_token"] = target_token
+    if "verification_token" in user:
+        del user["verification_token"]
+    del VERIFICATION_TOKEN_STORE[target_token]
+
+    logger.info(f"Audit Trail: Email address successfully verified for: {email}")
+    return {"status": "SUCCESS", "message": "Email address verified successfully. You may now log in."}
+
+
+@app.post("/auth/resend-verification", dependencies=[Depends(enforce_rate_limit)])
+async def resend_verification(payload: ResendVerificationRequest):
+    """Resends email verification token to unverified user accounts."""
+    target_email = payload.email.strip()
+    user = USER_DB.get(target_email)
+    if not user:
+        # Search by username fallback
+        matched = [u for u in USER_DB.values() if u["username"] == target_email]
+        if matched:
+            user = matched[0]
+            target_email = user["email"]
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account with target email address not found.",
+        )
+
+    if user.get("is_verified", True):
+        return {"status": "SUCCESS", "message": "This account is already verified."}
+
+    # Generate new verification token and revoke previous tokens
+    new_token = secrets.token_urlsafe(32)
+    for old_token, old_email in list(VERIFICATION_TOKEN_STORE.items()):
+        if old_email == target_email:
+            del VERIFICATION_TOKEN_STORE[old_token]
+
+    VERIFICATION_TOKEN_STORE[new_token] = target_email
+    user["verification_token"] = new_token
+
+    send_verification_email(target_email, new_token)
+    logger.info(f"Audit Trail: Resent verification token for user: {target_email}")
+    return {"status": "SUCCESS", "message": "Verification link has been sent to your email address."}
+
+
+@app.post("/auth/forgot-password", status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit)])
+async def forgot_password(payload: ForgotPasswordRequest):
+    """
+    Initiates password-reset flow: generates a time-limited token and dispatches a reset email.
+
+    Always returns HTTP 200 regardless of whether the email exists to prevent
+    account enumeration attacks. The reset link is also logged to the audit
+    trail when SMTP is not configured (local development fallback).
+    """
+    target_email = payload.email.strip().lower()
+    logger.info(f"Audit Trail: Forgot-password request received for email: {target_email}")
+
+    user = USER_DB.get(target_email)
+    if not user:
+        # Search case-insensitively across stored emails
+        matched = [u for u in USER_DB.values() if u["email"].lower() == target_email]
+        if matched:
+            user = matched[0]
+            target_email = user["email"]
+
+    if not user:
+        # Do NOT reveal that the email is not registered — always return success
+        logger.warning(f"Audit Trail: Forgot-password request for unknown email (suppressed): {target_email}")
+        return {
+            "status": "SUCCESS",
+            "message": "If that email address is registered, a password-reset link has been sent.",
+        }
+
+    # Invalidate any existing reset tokens for this account
+    for old_token, record in list(PASSWORD_RESET_TOKEN_STORE.items()):
+        if record["email"] == user["email"]:
+            del PASSWORD_RESET_TOKEN_STORE[old_token]
+
+    reset_token = secrets.token_urlsafe(32)
+    expires_at = time.time() + PASSWORD_RESET_EXPIRY_SECONDS
+    PASSWORD_RESET_TOKEN_STORE[reset_token] = {"email": user["email"], "expires_at": expires_at}
+
+    send_password_reset_email(user["email"], reset_token)
+    logger.info(f"Audit Trail: Password-reset token generated and dispatched for: {user['email']}")
+
+    return {
+        "status": "SUCCESS",
+        "message": "If that email address is registered, a password-reset link has been sent.",
+    }
+
+
+@app.post("/auth/reset-password", status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit)])
+async def reset_password(payload: ResetPasswordRequest):
+    """
+    Validates the reset token and updates the user's password.
+
+    Checks:
+      1. Token exists in PASSWORD_RESET_TOKEN_STORE.
+      2. Token has not expired (15-minute window).
+      3. Associated email resolves to an active user account.
+    On success the token is consumed (deleted) and cannot be reused.
+    """
+    record = PASSWORD_RESET_TOKEN_STORE.get(payload.token)
+
+    if not record:
+        logger.warning("Audit Trail: Reset-password attempt with invalid/unknown token.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired password-reset token.",
+        )
+
+    if time.time() > record["expires_at"]:
+        del PASSWORD_RESET_TOKEN_STORE[payload.token]
+        logger.warning(f"Audit Trail: Reset-password attempt with expired token for: {record['email']}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password-reset link has expired. Please request a new one.",
+        )
+
+    email = record["email"]
+    user = USER_DB.get(email)
+    if not user:
+        del PASSWORD_RESET_TOKEN_STORE[payload.token]
+        logger.error(f"Audit Trail: Reset-password — user record missing for email: {email}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User account not found.",
+        )
+
+    # Update password hash and consume the token
+    user["password_hash"] = AuthenticationManager.hash_password(payload.new_password)
+    del PASSWORD_RESET_TOKEN_STORE[payload.token]
+
+    logger.info(f"Audit Trail: Password successfully reset for user: {email} (ID: {user['user_id']})")
+    return {
+        "status": "SUCCESS",
+        "message": "Password has been reset successfully. You may now log in with your new password.",
+    }
+
 
 
 # =====================================================================

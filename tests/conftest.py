@@ -14,7 +14,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.auth.auth_service import app as auth_app, USER_DB, REFRESH_TOKEN_STORE, TOKEN_BLACKLIST
+from backend.auth.auth_service import (
+    app as auth_app,
+    USER_DB,
+    REFRESH_TOKEN_STORE,
+    VERIFICATION_TOKEN_STORE,
+    TOKEN_BLACKLIST,
+    PASSWORD_RESET_TOKEN_STORE,
+    RATE_LIMIT_STORE,
+    _seed_default_users,
+)
 from backend.alerts.alert_service import Base as AlertBase
 from backend.analytics.analytics_service import Base as AnalyticsBase
 
@@ -49,8 +58,13 @@ def clean_in_memory_auth_db():
     """Reset the auth module's in-memory storage elements before each check."""
     USER_DB.clear()
     REFRESH_TOKEN_STORE.clear()
+    VERIFICATION_TOKEN_STORE.clear()
     TOKEN_BLACKLIST.clear()
+    PASSWORD_RESET_TOKEN_STORE.clear()
+    RATE_LIMIT_STORE.clear()  # Prevent rate-limit bleed-over between tests
+    _seed_default_users()
     yield
+
 
 @pytest.fixture
 def auth_client():
@@ -64,5 +78,6 @@ def mock_vision_payload():
         "queue_active_count": 3,
         "entry_count": 87,
         "exit_count": 59,
-        "flow_direction_vector": (1.0, 1.0) # NE direction
+        "flow_direction_vector": (1.0, -1.0) # NE direction
     }
+

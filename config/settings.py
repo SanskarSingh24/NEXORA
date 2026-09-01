@@ -95,11 +95,11 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
 
     access_token_expire_minutes: int = Field(
-        default=15,
+        default=1440,
         alias="NEXORA_ACCESS_TOKEN_EXPIRE_MINUTES",
         ge=1,
-        le=60,
-        description="Lifetime of access tokens in minutes (1–60). Default: 15.",
+        le=10080,
+        description="Lifetime of access tokens in minutes (1–10080). Default: 1440 (24 hours).",
     )
 
     refresh_token_expire_days: int = Field(
@@ -128,6 +128,46 @@ class Settings(BaseSettings):
         default="http://localhost:3000,http://127.0.0.1:3000",
         alias="NEXORA_ALLOWED_ORIGINS",
         description="Comma-separated list of allowed CORS origins.",
+    )
+
+    # ------------------------------------------------------------------
+    # SMTP Email Configuration — optional, default: Gmail SMTP
+    # ------------------------------------------------------------------
+
+    smtp_host: str = Field(
+        default="smtp.gmail.com",
+        alias="NEXORA_SMTP_HOST",
+        description="SMTP Server hostname (default: smtp.gmail.com).",
+    )
+
+    smtp_port: int = Field(
+        default=587,
+        alias="NEXORA_SMTP_PORT",
+        description="SMTP Server port (default: 587).",
+    )
+
+    smtp_user: str = Field(
+        default="",
+        alias="NEXORA_SMTP_USER",
+        description="SMTP username / Gmail email address.",
+    )
+
+    smtp_password: str = Field(
+        default="",
+        alias="NEXORA_SMTP_PASSWORD",
+        description="SMTP password / Gmail App Password.",
+    )
+
+    smtp_from_email: str = Field(
+        default="",
+        alias="NEXORA_SMTP_FROM_EMAIL",
+        description="Sender email address for outgoing messages.",
+    )
+
+    frontend_url: str = Field(
+        default="http://localhost:5173",
+        alias="NEXORA_FRONTEND_URL",
+        description="Frontend base URL for generating verification links.",
     )
 
     # ------------------------------------------------------------------
