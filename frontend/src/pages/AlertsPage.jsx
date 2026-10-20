@@ -10,7 +10,11 @@ import {
     CheckCircle,
     Database,
     Grid,
-    Shield
+    Shield,
+    Users,
+    RefreshCw,
+    PhoneCall,
+    Phone
 } from 'lucide-react';
 import { useWebSocket } from '../hooks/useWebSocket';
 
@@ -56,6 +60,172 @@ export default function AlertsPage() {
     const [selectedAlert, setSelectedAlert] = useState(null);
     const [actionLog, setActionLog] = useState([]);
     const lastAlertKeyRef = useRef(null);
+
+    // Nearest Staff Priority for emergency alerts
+    const [priorityStaff, setPriorityStaff] = useState([]);
+    const [loadingPriorityStaff, setLoadingPriorityStaff] = useState(false);
+
+    // Automated Exotel Emergency Voice Call notification state
+    const [callStatusMap, setCallStatusMap] = useState({});
+    const dispatchedAlertsRef = useRef(new Set());
+
+    // Trigger outbound emergency voice call via Exotel API
+    const triggerExotelCall = async (staff, alert, force = false) => {
+        if (!staff || !staff.contact_number || !alert) return;
+        const alertId = alert.id;
+
+        setCallStatusMap(prev => ({
+            ...prev,
+            [alertId]: {
+                status: 'calling',
+                staffName: staff.name,
+                contactNumber: staff.contact_number,
+                zone: alert.zone,
+                details: `Dialing ${staff.name} (${staff.contact_number})...`,
+                timestamp: new Date().toLocaleTimeString(),
+            }
+        }));
+
+        try {
+            const token = localStorage.getItem('nexora_token');
+            const headers = {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            };
+            const payload = {
+                staff_id: staff.id,
+                contact_number: staff.contact_number,
+                staff_name: staff.name,
+                zone: alert.zone,
+                alert_id: String(alertId),
+                alert_level: alert.risk_level || alert.level || 'CRITICAL',
+                force: force
+            };
+
+            let res;
+            try {
+                res = await fetch('http://localhost:8000/staff/dispatch-call', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(payload)
+                });
+            } catch {
+                res = await fetch('http://127.0.0.1:8000/staff/dispatch-call', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(payload)
+                });
+            }
+
+            if (res && res.ok) {
+                const data = await res.json();
+                setCallStatusMap(prev => ({
+                    ...prev,
+                    [alertId]: {
+                        status: data.status,
+                        staffName: staff.name,
+                        contactNumber: staff.contact_number,
+                        zone: alert.zone,
+                        details: data.details || data.message,
+                        message: data.message,
+                        callSid: data.call_sid,
+                        timestamp: new Date().toLocaleTimeString(),
+                    }
+                }));
+            } else {
+                let errText = 'Failed to trigger call';
+                try {
+                    const errJson = await res.json();
+                    errText = errJson.detail || errJson.message || errText;
+                } catch {}
+                setCallStatusMap(prev => ({
+                    ...prev,
+                    [alertId]: {
+                        status: 'failed',
+                        staffName: staff.name,
+                        contactNumber: staff.contact_number,
+                        zone: alert.zone,
+                        details: errText,
+                        timestamp: new Date().toLocaleTimeString(),
+                    }
+                }));
+            }
+        } catch (err) {
+            console.error('[AlertsPage] Exotel call error:', err);
+            setCallStatusMap(prev => ({
+                ...prev,
+                [alertId]: {
+                    status: 'failed',
+                    staffName: staff.name,
+                    contactNumber: staff.contact_number,
+                    zone: alert.zone,
+                    details: err.message || 'Network error triggering call',
+                    timestamp: new Date().toLocaleTimeString(),
+                }
+            }));
+        }
+    };
+
+    // Query Nearest Staff Priority whenever selected alert is HIGH/CRITICAL
+    useEffect(() => {
+        if (!selectedAlert || !selectedAlert.zone) {
+            setPriorityStaff([]);
+            return;
+        }
+
+        const isEmergency = selectedAlert.level === 'RED' ||
+            selectedAlert.risk_level === 'CRITICAL' ||
+            selectedAlert.risk_level === 'HIGH';
+
+        if (!isEmergency) {
+            setPriorityStaff([]);
+            return;
+        }
+
+        let isMounted = true;
+        setLoadingPriorityStaff(true);
+
+        const fetchPriorityStaff = async () => {
+            try {
+                const token = localStorage.getItem('nexora_token');
+                const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+                let res;
+                try {
+                    res = await fetch(`http://localhost:8000/staff/priority?zone=${encodeURIComponent(selectedAlert.zone)}`, { headers });
+                } catch {
+                    res = await fetch(`http://127.0.0.1:8000/staff/priority?zone=${encodeURIComponent(selectedAlert.zone)}`, { headers });
+                }
+                if (res && res.ok) {
+                    const data = await res.json();
+                    const staffList = Array.isArray(data) ? data : [];
+                    if (isMounted) {
+                        setPriorityStaff(staffList);
+
+                        // Automated emergency call trigger step after ranking completes:
+                        // Call top-ranked available staff member via Exotel API
+                        if (staffList.length > 0) {
+                            const topRanked = staffList[0];
+                            const alertKey = String(selectedAlert.id);
+                            if (!dispatchedAlertsRef.current.has(alertKey) && topRanked.contact_number) {
+                                dispatchedAlertsRef.current.add(alertKey);
+                                triggerExotelCall(topRanked, selectedAlert, false);
+                            }
+                        }
+                    }
+                } else {
+                    if (isMounted) setPriorityStaff([]);
+                }
+            } catch (err) {
+                console.warn('[AlertsPage] Priority staff query error:', err);
+                if (isMounted) setPriorityStaff([]);
+            } finally {
+                if (isMounted) setLoadingPriorityStaff(false);
+            }
+        };
+
+        fetchPriorityStaff();
+        return () => { isMounted = false; };
+    }, [selectedAlert?.id, selectedAlert?.zone, selectedAlert?.level, selectedAlert?.risk_level]);
 
     // Fetch initial live alerts from backend REST API (/alerts)
     const fetchLiveAlerts = async () => {
@@ -109,6 +279,53 @@ export default function AlertsPage() {
             }
         }
     }, [wsData]);
+
+    // Query Nearest Staff Priority whenever selected alert is HIGH/CRITICAL
+    useEffect(() => {
+        if (!selectedAlert || !selectedAlert.zone) {
+            setPriorityStaff([]);
+            return;
+        }
+
+        const isEmergency = selectedAlert.level === 'RED' ||
+            selectedAlert.risk_level === 'CRITICAL' ||
+            selectedAlert.risk_level === 'HIGH';
+
+        if (!isEmergency) {
+            setPriorityStaff([]);
+            return;
+        }
+
+        let isMounted = true;
+        setLoadingPriorityStaff(true);
+
+        const fetchPriorityStaff = async () => {
+            try {
+                const token = localStorage.getItem('nexora_token');
+                const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+                let res;
+                try {
+                    res = await fetch(`http://localhost:8000/staff/priority?zone=${encodeURIComponent(selectedAlert.zone)}`, { headers });
+                } catch {
+                    res = await fetch(`http://127.0.0.1:8000/staff/priority?zone=${encodeURIComponent(selectedAlert.zone)}`, { headers });
+                }
+                if (res && res.ok) {
+                    const data = await res.json();
+                    if (isMounted) setPriorityStaff(Array.isArray(data) ? data : []);
+                } else {
+                    if (isMounted) setPriorityStaff([]);
+                }
+            } catch (err) {
+                console.warn('[AlertsPage] Priority staff query error:', err);
+                if (isMounted) setPriorityStaff([]);
+            } finally {
+                if (isMounted) setLoadingPriorityStaff(false);
+            }
+        };
+
+        fetchPriorityStaff();
+        return () => { isMounted = false; };
+    }, [selectedAlert?.id, selectedAlert?.zone, selectedAlert?.level, selectedAlert?.risk_level]);
 
     const handleAcknowledge = async (id) => {
         const now = new Date();
@@ -376,6 +593,153 @@ export default function AlertsPage() {
                                 )}
                             </div>
                         </div>
+
+                        {/* Nearest Staff Priority Section (HIGH / CRITICAL alerts) */}
+                        {(selectedAlert.level === 'RED' || selectedAlert.risk_level === 'CRITICAL' || selectedAlert.risk_level === 'HIGH') && (
+                            <div className="flex flex-col gap-2.5 pt-2 border-t border-panelBorder/60">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs uppercase font-extrabold text-white tracking-wider font-mono flex items-center gap-1.5">
+                                            <Users className="w-3.5 h-3.5 text-accentCyan" />
+                                            Nearest Staff Priority Dispatch
+                                        </span>
+                                        <span className="text-[9px] font-mono bg-statusRed/15 text-statusRed border border-statusRed/30 px-1.5 py-0.5 rounded font-bold uppercase">
+                                            EMERGENCY DISPATCH
+                                        </span>
+                                    </div>
+                                    <span className="text-[10px] font-mono text-textMuted">
+                                        Sector: <span className="text-slate-200 font-semibold">{selectedAlert.zone}</span>
+                                    </span>
+                                </div>
+
+                                <div className="bg-bgPrimary/70 border border-panelBorder rounded-lg p-3.5 flex flex-col gap-2.5">
+                                    {/* Exotel Voice Call Dispatch Status Bar */}
+                                    {priorityStaff.length > 0 && (
+                                        <div className="flex items-center justify-between p-2.5 rounded-md border bg-slate-900/90 border-cyan-500/30 text-xs font-mono">
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                <div className={`p-1.5 rounded-full ${
+                                                    callStatusMap[selectedAlert.id]?.status === 'calling'
+                                                        ? 'bg-amber-500/20 text-amber-400 animate-pulse'
+                                                        : callStatusMap[selectedAlert.id]?.status === 'dispatched'
+                                                        ? 'bg-statusGreen/20 text-statusGreen'
+                                                        : callStatusMap[selectedAlert.id]?.status === 'failed'
+                                                        ? 'bg-statusRed/20 text-statusRed'
+                                                        : 'bg-accentCyan/20 text-accentCyan'
+                                                }`}>
+                                                    <PhoneCall className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-white text-[11px] truncate">
+                                                            {callStatusMap[selectedAlert.id]?.status === 'calling' && `Dialing #${priorityStaff[0]?.rank} ${priorityStaff[0]?.name}...`}
+                                                            {callStatusMap[selectedAlert.id]?.status === 'dispatched' && `Exotel Voice Call Dispatched`}
+                                                            {callStatusMap[selectedAlert.id]?.status === 'simulated' && `Simulated Emergency Call Dispatched`}
+                                                            {callStatusMap[selectedAlert.id]?.status === 'already_called' && `Emergency Call Dispatched`}
+                                                            {callStatusMap[selectedAlert.id]?.status === 'failed' && `Exotel Call Alert`}
+                                                            {!callStatusMap[selectedAlert.id] && `Automated Exotel Emergency Call`}
+                                                        </span>
+                                                        <span className={`text-[9px] uppercase px-1.5 py-0.2 rounded font-bold ${
+                                                            callStatusMap[selectedAlert.id]?.status === 'calling'
+                                                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                                                : callStatusMap[selectedAlert.id]?.status === 'dispatched'
+                                                                ? 'bg-statusGreen/20 text-statusGreen border border-statusGreen/30'
+                                                                : callStatusMap[selectedAlert.id]?.status === 'failed'
+                                                                ? 'bg-statusRed/20 text-statusRed border border-statusRed/30'
+                                                                : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                                                        }`}>
+                                                            {callStatusMap[selectedAlert.id]?.status || 'READY'}
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-[10px] text-textMuted truncate">
+                                                        {callStatusMap[selectedAlert.id]?.details ||
+                                                            `Top responder: #${priorityStaff[0]?.rank} ${priorityStaff[0]?.name} (${priorityStaff[0]?.contact_number})`}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => triggerExotelCall(priorityStaff[0], selectedAlert, true)}
+                                                disabled={callStatusMap[selectedAlert.id]?.status === 'calling'}
+                                                title="Trigger emergency phone call via Exotel"
+                                                className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-accentCyan/15 hover:bg-accentCyan/25 border border-accentCyan/40 text-accentCyan font-bold text-[10px] transition-all flex-shrink-0 disabled:opacity-50"
+                                            >
+                                                <Phone className="w-3 h-3" />
+                                                {callStatusMap[selectedAlert.id]?.status === 'calling' ? 'Calling...' : 'Call Responder'}
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {loadingPriorityStaff ? (
+                                        <div className="py-4 flex items-center justify-center gap-2 text-textMuted text-xs font-mono">
+                                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-accentCyan" />
+                                            Calculating nearest available personnel for {selectedAlert.zone}...
+                                        </div>
+                                    ) : priorityStaff.length === 0 ? (
+                                        <div className="py-3 text-center text-textMuted text-xs font-mono">
+                                            ⚠️ No available staff currently on-duty in or near this sector.
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1">
+                                            {priorityStaff.map((staff) => (
+                                                <div
+                                                    key={staff.id}
+                                                    className={`flex items-center justify-between p-2.5 rounded-md border transition-all text-xs ${
+                                                        staff.is_exact_zone
+                                                            ? 'bg-statusRed/5 border-statusRed/40 shadow-[0_0_8px_rgba(239,68,68,0.15)]'
+                                                            : 'bg-slate-900/60 border-panelBorder/60'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        {/* Rank badge */}
+                                                        <div
+                                                            className={`w-6 h-6 rounded-full flex items-center justify-center font-mono font-black text-[10px] flex-shrink-0 ${
+                                                                staff.rank === 1
+                                                                    ? 'bg-accentCyan text-bgPrimary shadow-[0_0_8px_rgba(0,229,255,0.4)]'
+                                                                    : 'bg-slate-800 text-slate-300 border border-slate-700'
+                                                            }`}
+                                                        >
+                                                            #{staff.rank}
+                                                        </div>
+
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-bold text-white text-xs">{staff.name}</span>
+                                                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 border border-blue-500/30 text-blue-400 font-medium">
+                                                                    {staff.role}
+                                                                </span>
+                                                                {staff.is_exact_zone && (
+                                                                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-statusGreen/15 border border-statusGreen/40 text-statusGreen font-bold uppercase">
+                                                                        Exact Match
+                                                                    </span>
+                                                                )}
+                                                                {staff.rank === 1 && (
+                                                                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 font-bold uppercase flex items-center gap-1">
+                                                                        <PhoneCall className="w-2.5 h-2.5" />
+                                                                        Auto-Call
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="text-[10px] text-textMuted flex items-center gap-2 mt-0.5 font-mono">
+                                                                <span>Zone: <strong className="text-slate-300">{staff.zone}</strong></span>
+                                                                {staff.contact_number && (
+                                                                    <span>• Comms: <strong className="text-slate-300">{staff.contact_number}</strong></span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2 font-mono text-[10px]">
+                                                        <span className="text-statusGreen font-semibold flex items-center gap-1">
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-statusGreen animate-pulse"></span>
+                                                            Available
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Verified Stamp details */}
                         <div className="flex items-center gap-3 bg-bgPrimary/30 border border-panelBorder/70 rounded-lg p-4">

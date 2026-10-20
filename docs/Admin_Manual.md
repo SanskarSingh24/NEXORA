@@ -71,3 +71,14 @@ The predictive risk models (XGBoost) can be retrained as new historical telemetr
 Administrators can view and search security logs under the **"Security logs Auditing"** section:
 * Logs track all developer and operator actions (e.g. system configurations updates, alert acknowledgements, passwords modifications, active logins).
 * To export GDPR compliance documents detailing facial blur statistics and edge deletion reports, click **"Generate GDPR Audit Log"**.
+
+---
+
+## 5. Staff Management & Personnel Deployment
+
+Administrators can manage the venue personnel roster and track on-ground deployment in the **Staff Management** console:
+* **Enroll Staff Members**: Add personnel with full name, operational role (`Security`, `Medical`, `Supervisor`, `Technical`, `Logistics`, or custom roles), contact number/radio frequency, and assigned venue zone (`Zone A`, `Zone B`, `Zone C`, `Central Command`, `West Gate`, etc.).
+* **Availability & Dispatch Tracking**: Real-time status flags (`Available`, `Busy`, `Off-duty`) reflect personnel deployment for immediate dispatch during crowd emergencies.
+* **Quick Status Updates**: Use the inline status selector or edit modal to toggle personnel readiness instantly.
+* **Nearest Staff Priority Dispatch**: When a `HIGH` or `CRITICAL` emergency alert triggers, the system automatically correlates the incident zone against the staff registry, prioritizing available personnel in the exact sector first (#1 Primary), followed by fallback available staff in adjacent zones, while automatically skipping busy and off-duty personnel.
+* **Role-Based Access Control**: Staff management is restricted strictly to users with `ADMIN` clearance. Non-admin users are automatically blocked.

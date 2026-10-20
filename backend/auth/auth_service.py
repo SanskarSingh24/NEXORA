@@ -21,6 +21,15 @@ from uuid import UUID, uuid4, uuid5, NAMESPACE_DNS
 from fastapi import Depends, FastAPI, HTTPException, Security, status, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware
+import types
+
+try:
+    import bcrypt
+    if not hasattr(bcrypt, "__about__"):
+        bcrypt.__about__ = types.SimpleNamespace(__version__=getattr(bcrypt, "__version__", "4.1.2"))
+except ImportError:  # pragma: no cover - runtime fallback
+    bcrypt = None
+
 from jose import JWTError, jwt
 from jose.exceptions import ExpiredSignatureError
 # pyrefly: ignore [missing-import]
@@ -28,11 +37,6 @@ from passlib.context import CryptContext
 from pydantic import BaseModel, Field, validator
 
 from backend.auth.email_service import send_verification_email, send_password_reset_email
-
-try:
-    import bcrypt
-except ImportError:  # pragma: no cover - runtime fallback
-    bcrypt = None
 
 
 # =====================================================================

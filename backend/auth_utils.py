@@ -1,10 +1,20 @@
 import os
+import types
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
+
+# Ensure compatibility between passlib and bcrypt >= 4.0.0
+try:
+    import bcrypt
+    if not hasattr(bcrypt, "__about__"):
+        bcrypt.__about__ = types.SimpleNamespace(__version__=getattr(bcrypt, "__version__", "4.1.2"))
+except ImportError:
+    pass
+
 from passlib.context import CryptContext
 
 SECRET_KEY = os.getenv("NEXORA_JWT_SECRET", "nexora-dev-secret-change-me")

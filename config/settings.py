@@ -171,6 +171,46 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Exotel Voice Call Configuration — optional (free trial / production)
+    # ------------------------------------------------------------------
+
+    exotel_account_sid: str = Field(
+        default="",
+        alias="EXOTEL_ACCOUNT_SID",
+        description="Exotel Account SID (found in Exotel console).",
+    )
+
+    exotel_api_key: str = Field(
+        default="",
+        alias="EXOTEL_API_KEY",
+        description="Exotel API Key.",
+    )
+
+    exotel_api_token: str = Field(
+        default="",
+        alias="EXOTEL_API_TOKEN",
+        description="Exotel API Token.",
+    )
+
+    exotel_caller_id: str = Field(
+        default="",
+        alias="EXOTEL_CALLER_ID",
+        description="Exotel Virtual Number (ExoPhone) assigned to account.",
+    )
+
+    exotel_subdomain: str = Field(
+        default="api.exotel.com",
+        alias="EXOTEL_SUBDOMAIN",
+        description="Exotel API subdomain (default: api.exotel.com).",
+    )
+
+    exotel_applet_id: str = Field(
+        default="",
+        alias="EXOTEL_APPLET_ID",
+        description="Exotel Applet ID if using pre-configured flow in Exotel dashboard.",
+    )
+
+    # ------------------------------------------------------------------
     # Validators
     # ------------------------------------------------------------------
 

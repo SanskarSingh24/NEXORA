@@ -20,12 +20,13 @@ from config.settings import settings
 
 # Import sub-apps to extract their routers
 from backend.auth.auth_service import app as auth_app
-from backend.camera.camera_service import app as camera_app, init_db as init_camera_db
+from backend.camera.camera_service import app as camera_app, init_db as init_camera_db, camera_manager
 from backend.map.map_server import app as map_app, coordinate_broadcast_loop
 from backend.ai.predictive_engine import app as predictive_app, load_trained_model
 from backend.ai.explainable_api import app as explainable_app
 from backend.reports.report_service import app as report_app
 from backend.alerts.alert_service import app as alert_app
+from backend.staff.staff_service import app as staff_app, init_db as init_staff_db
 
 # Structured Logging
 logging.basicConfig(
@@ -55,11 +56,24 @@ async def lifespan(app: FastAPI):
 
         AnalyticsBase.metadata.create_all(bind=analytics_engine)
         AlertBase.metadata.create_all(bind=alert_engine)
+        init_staff_db()
         logger.info("System Lifespan: Database schemas synced successfully.")
     except Exception as exc:
         logger.error("System Lifespan: Database metadata mapping failed: %s", exc)
 
-    # 2. Machine Learning checkpoint loading
+    # 2. Schedule camera pipelines in background after server is ready (does not slow down API boot)
+    async def _start_camera_pipelines_background():
+        try:
+            # Yield control briefly so Uvicorn finishes binding and starts accepting HTTP requests immediately
+            await asyncio.sleep(0.1)
+            logger.info("System Lifespan: Starting independent pipelines for active cameras in background...")
+            camera_manager.start_all_active_cameras()
+        except Exception as exc:
+            logger.error("System Lifespan: Background camera pipelines startup failed: %s", exc)
+
+    cam_task = asyncio.create_task(_start_camera_pipelines_background())
+
+    # 3. Machine Learning checkpoint loading
     try:
         logger.info("System Lifespan: Loading XGBoost predictions weights...")
         load_trained_model()
@@ -68,7 +82,7 @@ async def lifespan(app: FastAPI):
             "System Lifespan: ML model weights loading crashed. Fallback active: %s", exc
         )
 
-    # 3. Dynamic Pedestrian Simulation broker loop activation
+    # 4. Dynamic Pedestrian Simulation broker loop activation
     logger.info("System Lifespan: Starting real-time WebSocket coordinates broker loop...")
     sim_task = asyncio.create_task(coordinate_broadcast_loop())
 
@@ -81,6 +95,12 @@ async def lifespan(app: FastAPI):
         await sim_task
     except asyncio.CancelledError:
         pass
+
+    if not cam_task.done():
+        cam_task.cancel()
+
+    logger.info("System Lifespan: Stopping all active camera pipelines...")
+    camera_manager.stop_all()
     logger.info("System Lifespan: NEXORA Enterprise platform offline.")
 
 
@@ -115,6 +135,7 @@ app.include_router(predictive_app.router)
 app.include_router(explainable_app.router)
 app.include_router(report_app.router)
 app.include_router(alert_app.router)
+app.include_router(staff_app.router)
 
 
 @app.get("/health")

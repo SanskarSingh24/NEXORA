@@ -19,18 +19,22 @@ import {
   KeyRound,
   Lock,
   Eye,
-  EyeOff
+  EyeOff,
+  Users
 } from 'lucide-react';
 import DashboardPage from './pages/DashboardPage';
 import CrowdMapPage from './pages/CrowdMapPage';
 import ReportsPage from './pages/ReportsPage';
 import AlertsPage from './pages/AlertsPage';
+import StaffPage from './pages/StaffPage';
+import LandingPage from './pages/LandingPage';
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/crowd-map', label: 'Crowd Map', icon: Activity },
   { to: '/reports', label: 'Reports', icon: FileText },
   { to: '/alerts', label: 'Alerts', icon: Bell },
+  { to: '/staff', label: 'Staff', icon: Users, adminOnly: true },
 ];
 
 function VerifyEmailView() {
@@ -410,7 +414,16 @@ export default function App() {
 
       const accessToken = data.access_token;
       const refreshToken = data.refresh_token;
-      const userRole = data.role || 'operator';
+      let userRole = data.role;
+      if (!userRole && accessToken) {
+        try {
+          const payload = JSON.parse(atob(accessToken.split('.')[1]));
+          if (payload && payload.role) userRole = payload.role;
+        } catch (e) {
+          // ignore decode errors
+        }
+      }
+      if (!userRole) userRole = 'operator';
 
       localStorage.setItem('nexora_token', accessToken);
       if (refreshToken) localStorage.setItem('nexora_refresh_token', refreshToken);
@@ -421,7 +434,7 @@ export default function App() {
       setRole(userRole);
       setUsername(authUsername);
       setAuthStatus('idle');
-      navigate('/');
+      navigate('/dashboard');
     } catch (err) {
       console.error('[Auth] Login error:', err);
       setAuthError(err.message);
@@ -536,6 +549,22 @@ export default function App() {
     navigate('/');
   };
 
+  // Sync auth mode with route
+  useEffect(() => {
+    if (location.pathname === '/register') {
+      setAuthMode('register');
+    } else if (location.pathname === '/login') {
+      setAuthMode('login');
+    }
+  }, [location.pathname]);
+
+  // If user is already authenticated and visits /login or /register, redirect to dashboard
+  useEffect(() => {
+    if (token && (location.pathname === '/login' || location.pathname === '/register')) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [token, location.pathname, navigate]);
+
   // Render /reset-password page
   if (location.pathname === '/reset-password') {
     return <ResetPasswordView />;
@@ -544,6 +573,22 @@ export default function App() {
   // Render Verification Page if visiting /verify-email
   if (location.pathname === '/verify-email') {
     return <VerifyEmailView />;
+  }
+
+  // Render Landing Page at route "/" (loads for all visitors including logged-in users)
+  if (location.pathname === '/') {
+    return (
+      <LandingPage
+        onGetStarted={() => {
+          setAuthMode('register');
+          navigate('/register');
+        }}
+        onLogin={() => {
+          setAuthMode('login');
+          navigate('/login');
+        }}
+      />
+    );
   }
 
   // Render Gateway Login / Register Layout if unauthenticated
@@ -555,7 +600,11 @@ export default function App() {
 
         <div className="max-w-md w-full bg-bgSecondary border border-panelBorder rounded-2xl p-8 relative overflow-hidden shadow-[0_0_50px_rgba(30,41,75,0.3)] z-10">
 
-          <div className="flex items-center gap-3.5 mb-6">
+          <div
+            className="flex items-center gap-3.5 mb-6 cursor-pointer"
+            onClick={() => navigate('/')}
+            title="Return to home"
+          >
             <div className="w-7 h-7 bg-gradient-to-br from-accentCyan to-accentBlue rounded-xl shadow-[0_0_15px_rgba(0,229,255,0.4)]"></div>
             <div>
               <h1 className="font-outfit font-extrabold text-2xl tracking-wider text-white">NEXORA Gateway</h1>
@@ -566,7 +615,7 @@ export default function App() {
           {/* Mode Switcher Tabs */}
           <div className="flex bg-bgPrimary border border-panelBorder rounded-lg p-1 mb-6">
             <button
-              onClick={() => { setAuthMode('login'); setAuthError(null); }}
+              onClick={() => { setAuthMode('login'); setAuthError(null); navigate('/login'); }}
               className={`flex-1 py-2 text-xs font-extrabold uppercase tracking-wider rounded-md transition-all flex items-center justify-center gap-2 ${
                 authMode === 'login'
                   ? 'bg-slate-900 text-accentCyan shadow-[0_0_10px_rgba(0,229,255,0.2)]'
@@ -576,7 +625,7 @@ export default function App() {
               <LogIn className="w-3.5 h-3.5" /> Sign In
             </button>
             <button
-              onClick={() => { setAuthMode('register'); setRegError(null); }}
+              onClick={() => { setAuthMode('register'); setRegError(null); navigate('/register'); }}
               className={`flex-1 py-2 text-xs font-extrabold uppercase tracking-wider rounded-md transition-all flex items-center justify-center gap-2 ${
                 authMode === 'register'
                   ? 'bg-slate-900 text-accentCyan shadow-[0_0_10px_rgba(0,229,255,0.2)]'
@@ -832,6 +881,15 @@ export default function App() {
               )}
             </form>
           )}
+          <div className="mt-5 pt-4 border-t border-panelBorder text-center">
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="text-xs text-textMuted hover:text-white transition-colors cursor-pointer"
+            >
+              ← Back to Home
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -851,29 +909,39 @@ export default function App() {
       {/* Sidebar Navigation */}
       <aside className="w-64 bg-bgSecondary border-r border-[#1e294b] flex flex-col justify-between p-6 relative z-10 print:hidden flex-shrink-0">
         <div>
-          <div className="flex items-center gap-3 mb-8">
+          <a
+            href="/"
+            className="flex items-center gap-3 mb-8 cursor-pointer group"
+          >
             <div className="w-6 h-6 bg-gradient-to-br from-accentCyan to-accentBlue rounded-lg shadow-[0_0_10px_rgba(0,229,255,0.4)]"></div>
-            <h1 className="font-outfit font-extrabold text-xl tracking-wider text-white">NEXORA</h1>
-          </div>
+            <h1 className="font-outfit font-extrabold text-xl tracking-wider text-white group-hover:text-accentCyan transition-colors">NEXORA</h1>
+          </a>
 
           <hr className="border-[#1e294b] mb-6" />
 
           <nav className="flex flex-col gap-2">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) => `
-                  flex items-center gap-3 px-4 py-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all 
-                  ${isActive
-                    ? 'bg-slate-900 text-accentCyan border-l-4 border-accentCyan shadow-[0_0_8px_rgba(0,229,255,0.15)]'
-                    : 'text-textMuted hover:bg-[#12182c] hover:text-white border-l-4 border-transparent'
-                  }
-                `}
-              >
-                <item.icon className="w-4 h-4" />
-                <span>{item.label}</span>
-              </NavLink>
+            {navItems
+              .filter(item => !item.adminOnly || (role && role.toUpperCase() === 'ADMIN'))
+              .map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) => `
+                    flex items-center gap-3 px-4 py-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all 
+                    ${isActive
+                      ? 'bg-slate-900 text-accentCyan border-l-4 border-accentCyan shadow-[0_0_8px_rgba(0,229,255,0.15)]'
+                      : 'text-textMuted hover:bg-[#12182c] hover:text-white border-l-4 border-transparent'
+                    }
+                  `}
+                >
+                  <item.icon className="w-4 h-4" />
+                  <span className="flex-grow">{item.label}</span>
+                  {item.adminOnly && (
+                    <span className="text-[9px] font-mono bg-accentCyan/15 text-accentCyan px-1.5 py-0.5 rounded border border-accentCyan/30">
+                      ADMIN
+                    </span>
+                  )}
+                </NavLink>
             ))}
           </nav>
         </div>
@@ -915,9 +983,11 @@ export default function App() {
         <div className="flex-grow min-h-0 bg-bgPrimary">
           <Routes>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/crowd-map" element={<CrowdMapPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
+            <Route path="/staff" element={<StaffPage />} />
           </Routes>
         </div>
 

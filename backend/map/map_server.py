@@ -179,7 +179,10 @@ def build_payload() -> dict:
         # ------------------------------------------------------------------
         crowd_count = snapshot["crowd_count"]
         density = snapshot["density"]
-        avg_speed = snapshot["avg_speed"]
+        try:
+            avg_speed = max(0.0, min(float(snapshot["avg_speed"]), 30.0))
+        except (ValueError, TypeError):
+            avg_speed = 1.2
         heatmap = snapshot["heatmap"]
         entry_rate = snapshot.get("entry_rate", 0.0)
         exit_rate = snapshot.get("exit_rate", 0.0)

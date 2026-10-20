@@ -57,3 +57,26 @@ frontend/node_modules/
 
 # npm logs
 npm-debug.log*
+
+
+# Frontend build output (Vite)
+frontend/dist/
+frontend/build/
+.vite/
+
+# Database files 
+*.sqlite3
+*.db
+
+# Test/demo video files 
+*.mp4
+*.avi
+test_videos/
+
+# YOLOv8n model weights 
+*.pt
+yolov8n.pt
+
+# Uploaded/temp camera snapshots 
+uploads/
+temp/

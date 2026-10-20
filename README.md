@@ -150,6 +150,8 @@ NEXORA/
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
+py -3.12 -m venv .venv
+.venv\Scripts\activate
 
 ### 3. Install Dependencies
 ```bash
@@ -170,6 +172,8 @@ export NEXORA_JWT_SECRET="your_secure_jwt_secret_key"
 ---
 
 ## 🏃 How to Run
+## Final Backend start command
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 
 NEXORA services run as distributed microservices:
 

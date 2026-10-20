@@ -24,6 +24,50 @@ except ImportError:
     print("WARNING: 'shap' or 'joblib' library not found.")
     print("Explainable AI (XAI) API will run in Simulation Mode.")
 
+
+def _patch_shap_xgb_base_score():
+    """
+    Compatibility fix for XGBoost >= 3.0 and SHAP TreeExplainer.
+    XGBoost stores multiclass base_score as a stringified array (e.g. '[5E-1,5E-1,5E-1,5E-1]').
+    SHAP's XGBTreeModelLoader expects a numeric/single-float string and calls float(base_score),
+    causing ValueError: could not convert string to float: '[5E-1,5E-1,5E-1,5E-1]'.
+    This patch ensures the baseline/background array in learner_model_param is converted to a numeric
+    float value so TreeExplainer initializes properly.
+    """
+    try:
+        import json
+        import shap.explainers._tree as shap_tree
+        if hasattr(shap_tree, "decode_ubjson_buffer"):
+            orig_decode = shap_tree.decode_ubjson_buffer
+            if not getattr(orig_decode, "_is_patched", False):
+                def patched_decode(fd):
+                    data = orig_decode(fd)
+                    try:
+                        lmp = data.get("learner", {}).get("learner_model_param", {})
+                        if "base_score" in lmp:
+                            bs = lmp["base_score"]
+                            if isinstance(bs, str) and bs.strip().startswith("["):
+                                try:
+                                    parsed = json.loads(bs.strip())
+                                except Exception:
+                                    import ast
+                                    parsed = ast.literal_eval(bs.strip())
+                                if isinstance(parsed, (list, tuple)) and len(parsed) > 0:
+                                    lmp["base_score"] = str(float(parsed[0]))
+                                else:
+                                    lmp["base_score"] = str(float(parsed))
+                    except Exception:
+                        pass
+                    return data
+                patched_decode._is_patched = True
+                shap_tree.decode_ubjson_buffer = patched_decode
+    except Exception:
+        pass
+
+
+if SKLEARN_SHAP_AVAILABLE:
+    _patch_shap_xgb_base_score()
+
 # Import local data model structures from predictive_engine.py
 from backend.ai.predictive_engine import PredictionInput, MODEL_PATH, SKLEARN_XGBOOST_AVAILABLE
 
@@ -55,6 +99,7 @@ class ShapExplainabilityManager:
         if SKLEARN_SHAP_AVAILABLE and SKLEARN_XGBOOST_AVAILABLE and os.path.exists(model_file):
             try:
                 self.model = joblib.load(model_file)
+                _patch_shap_xgb_base_score()
                 # Create a SHAP TreeExplainer optimized for XGBoost tree models
                 self.explainer = shap.TreeExplainer(self.model)
                 print(f"SHAP TreeExplainer initialized for model: {model_file}")

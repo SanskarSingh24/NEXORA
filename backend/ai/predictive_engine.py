@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # Try to import ML libraries. Fallback to a rule-based engine if not present.
 try:
@@ -38,12 +38,21 @@ MODEL_PATH: str = settings.ml_model_path
 
 class PredictionInput(BaseModel):
     density: float = Field(..., ge=0.0, le=15.0, description="People per square meter")
-    speed: float = Field(..., ge=0.0, le=10.0, description="Average velocity in m/s")
+    speed: float = Field(..., ge=0.0, le=30.0, description="Average velocity in m/s")
     entry_rate: float = Field(..., ge=0.0, description="People entering per minute")
     exit_rate: float = Field(..., ge=0.0, description="People exiting per minute")
     flow_direction_angle: float = Field(..., ge=0.0, le=360.0, description="Average flow direction in degrees")
     queue_length: int = Field(..., ge=0, description="Current queue count in target zone")
     occupancy: float = Field(..., ge=0.0, le=150.0, description="Occupancy percentage")
+
+    @field_validator("speed", mode="before")
+    @classmethod
+    def clamp_speed(cls, v):
+        try:
+            val = float(v)
+            return max(0.0, min(val, 30.0))
+        except (ValueError, TypeError):
+            return 1.2
 
 
 class PredictionOutput(BaseModel):
@@ -302,9 +311,14 @@ def predict_risk_from_metrics(
     Evaluates real-time vision engine telemetry metrics through XGBoost ML model or Rule-Based fallback.
     Returns: (risk_level, risk_score, confidence)
     """
+    try:
+        safe_speed = max(0.0, min(float(speed), 30.0))
+    except (ValueError, TypeError):
+        safe_speed = 1.2
+
     inp = PredictionInput(
         density=density,
-        speed=speed,
+        speed=safe_speed,
         entry_rate=entry_rate,
         exit_rate=exit_rate,
         flow_direction_angle=flow_angle,
@@ -316,8 +330,8 @@ def predict_risk_from_metrics(
     # Calculate continuous 0-100 risk score dynamically derived from risk class, density, queue, speed & occupancy
     class_bonus = res.risk_class_id * 22.0
     base_score = 10.0 + class_bonus + (density * 6.5) + (queue_length * 0.4) + (occupancy * 0.1)
-    if speed < 0.6:
-        base_score += (0.6 - speed) * 15.0
+    if safe_speed < 0.6:
+        base_score += (0.6 - safe_speed) * 15.0
     risk_score = round(min(100.0, max(5.0, base_score)), 1)
     
     return res.risk_level, risk_score, res.confidence_score

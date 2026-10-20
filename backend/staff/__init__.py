@@ -1,0 +1,3 @@
+"""
+NEXORA Staff Management Package
+"""
